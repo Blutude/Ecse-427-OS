@@ -1,0 +1,21 @@
+P1Q1)
+Uniprogramming allows only one program to run at a time and only once that program is done running, another program can start running. Since memory is only used by 1 program at a time, it does not need to be large in size. Also, the CPU resources are provided to that program. Multiprogramming allows multiple program to run not concurrently but all together alternating between a program and another. In multiprogramming, memory is shared with all programs and the CPU resources are allocated dynamically.
+Timesharing systems are similar to multiprogramming systems in the sense that many programs can run together but multiprogramming systems focus on increasing the CPU utilization whereas timesharing systems focus on minimizing the time for executing a command. Timesharing systems are used when several users work in a single computer system at the same time. Those systems have larger memory and CPU resources than the former two systems.
+
+P1Q2)
+In a uniprogramming system, all 3 programs would take (2+10+4)*3 = 48msec to complete because a program cannot run while another one is waiting.
+
+In a multiprogramming system, it would look like this:
+ 
+	   	t=0		t=2		t=4		t=6		t=8		t=10		t=12		
+Program 1:	|run		|wait resource	|wait resource	|wait resource	|wait resource	|wait resource	|run		
+Program 2:	|wait turn	|run		|wait resource	|wait resource	|wait resource	|wait resource	|wait resource	
+Program 3:	|wait turn	|wait turn	|run		|wait resource	|wait resource	|wait resource	|wait resource	
+
+
+		t=14		t=16		t=18		t=20		t=22		t=24
+Program 1:	|run		|done		|---------------|---------------|---------------|
+Program 2:	|wait turn	|run		|run		|done		|---------------|
+Program 3:	|wait resource	|wait turn	|wait turn	|run		|run		|done
+
+So It takes 24msec in a multiprogramming system.
