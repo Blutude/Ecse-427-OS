@@ -11,6 +11,7 @@
 #define NUM_BLOCKS 1024  //maximum number of data blocks on the disk.
 #define BITMAP_ROW_SIZE (NUM_BLOCKS/8) // this essentially mimcs the number of rows we have in the bitmap. we will have 128 rows. 
 #define BLOCK_SIZE 1024
+#define INODE_LEN 100
 
 /* macros */
 #define FREE_BIT(_data, _which_bit) \
@@ -21,9 +22,10 @@
 
 struct superblock_t superblock;
 struct file_descriptor fd[100]; // is that the inode table?
-struct directory_entry de[100];
+struct directory_entry files[100];
 int directoryEntryIndex = 0;
 int lastDirectoryEntryIndex = 0;
+void* buffer;
 
 
 //initialize all bits to high
@@ -36,18 +38,20 @@ void mksfs(int fresh) {
 		r = init_fresh_disk(AZRAK_RONY_DISK, BLOCK_SIZE, NUM_BLOCKS);
 
 		// init superblock, forceset superblock
-		
-
-		// fill members of superblock
-		superblock.magic = 0xACBD0005; // ?
-		superblock.block_size = 1024;
-		superblock.fs_size = 1024;
-		superblock.inode_table_len = 100; // len or last index? what would be used for?
-		superblock.root_dir_inode = 0;
+		superblock = (superblock_t) {0xACBD0005, BLOCK_SIZE, NUM_BLOCKS, INODE_LEN, 0};
 		force_set_index(0);
-		write_blocks(0, 1, superblock); // this good????
+		buffer = (void*) malloc(BLOCK_SIZE);
+		memcpy(buffer, &superblock, sizeof(superblock_t));
+		if (write_blocks(0, 1, buffer) < 0)
+			printf("Failure(s) writing superblock\n");
 
-		// init filedescriptor and directory entries
+		// init file descriptors
+		for (int i=0; i<INODE_LEN - 1; i++) { // INODE_LEN - 1 because first INODE belongs to root directory
+			files[i].num = -1;
+			files[i].name[0] = 0; // empty string
+		}
+
+		// init directory entries
 
 		// writing bitmap
 		write_blocks(1023, 1, free_bit_map);
