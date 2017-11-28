@@ -1,0 +1,3 @@
+$("web.html").ready(function() {
+    $('.js-player-names').select2();
+});

@@ -1,0 +1,11 @@
+init
+reserve specific A 209
+reserve specific B 209
+reserve specific A 104
+status
+reserve random B
+reserve specific A 104
+status
+init
+status
+exit
