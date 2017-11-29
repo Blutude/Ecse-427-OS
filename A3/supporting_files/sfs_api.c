@@ -86,7 +86,7 @@ int nameValid(char* name) {
 
 
 //initialize all bits to high
-uint8_t free_bit_map[BITMAP_ROW_SIZE] = { [0 ... BITMAP_ROW_SIZE - 1] = UINT8_MAX };
+//uint8_t free_bit_map[BITMAP_ROW_SIZE] = { [0 ... BITMAP_ROW_SIZE - 1] = UINT8_MAX };
 
 void mksfs(int fresh) {
 	// clear inode table ???? why?
