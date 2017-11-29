@@ -24,8 +24,8 @@
     _data = _data & ~(1 << _which_bit)
 
 struct superblock_t superblock;
-struct file_descriptor fd[INODE_LEN]; // is that the inode table?
-struct directory_entry files[INODE_LEN];
+struct file_descriptor fd[NUM_FILES]; 
+struct directory_entry files[NUM_FILES];
 struct inode_t iNodeTable[INODE_LEN];
 //int directoryEntryIndex = 0;
 //int lastDirectoryEntryIndex = 0;
@@ -59,6 +59,25 @@ int writeFreeBitMap() { // write to disk
 	int r = write_blocks(NUM_BLOCKS-1, 1, buffer);
 	free(buffer);
 	return r;
+}
+
+
+// **** Other helpers
+int nameValid(char* name) {
+	int length = strlen(name);
+	if (length > 20)
+		return -1;
+	char copy[length];
+	memset(copy, '\0', sizeof(copy));
+	strcpy(copy, name); // because strtok modifies the string
+
+	char* token;
+	const char s[2] = ".";
+	token = strtok(copy, s); // token = "([]).[]"
+	token = strtok(NULL, s); // token = "[].([])"
+	if (strlen(token) > 3)
+		return -1;
+	return 0;
 }
 
 
@@ -96,9 +115,9 @@ void mksfs(int fresh) {
 			files[i].name[0] = 0; // empty string
 		}
 		if (writeRootDirectory() < 0)
-			printf("Failure(s) writing root directory\n")
+			printf("Failure(s) writing root directory\n");
 		// updating freeBitMap
-		force_set_index(DATA_BLOCKS_START);
+		force_set_index(DATA_BLOCKS_START); // !!!! make change fixed root directory location
 		force_set_index(DATA_BLOCKS_START+1);
 		force_set_index(DATA_BLOCKS_START+2);
 		force_set_index(DATA_BLOCKS_START+3);
@@ -108,12 +127,12 @@ void mksfs(int fresh) {
 
 		// init file descriptors. Does not write to disk, is in-memory
 		for (i=0; i<NUM_FILES; i++) {
-			fd[i] = (file_descriptor) {-1, NULL, -1};
+			fd[i] = (file_descriptor) {-1, NULL, 0};
 		}
 
 
 
-		// init root inode and inode table
+		// init root inode and inode table. !!!! CHANGE this to get index to we find where to write root directory? (location doesn't need to be fixed)
 		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {DATA_BLOCKS_START, DATA_BLOCKS_START+1, DATA_BLOCKS_START+2, DATA_BLOCKS_START+3, DATA_BLOCKS_START+4, -1, -1, -1, -1, -1, -1, -1}, -1}; // ?? root INode points to 5 blocks (size of root directory)
 		if (writeINode(0) < 0)
 			printf("Failure(s) writing inode nb%d\n", 0);
@@ -135,7 +154,14 @@ void mksfs(int fresh) {
 		r = init_disk(AZRAK_RONY_DISK, BLOCK_SIZE, NUM_BLOCKS);
 		
 
-		//readB
+		//read superblock
+		read_blocks(0, 1, buffer);
+		memcpy(&superblock, buffer, sizeof(superblock_t));
+
+		
+
+		// read directory entries
+		// !!!! might make root directory no fix. Need to look for location through first inode
 
 
 	}
@@ -144,16 +170,92 @@ void mksfs(int fresh) {
 		return;
 }
 
-void sfs_getnextfilename(char *fname) {
+int sfs_getnextfilename(char *fname) {
 
 }
 
-int sfs_getfilesize(const char* path){
+int sfs_getfilesize(const char* path) {
 
 }
-int sfs_fopen(char *name){
-	// return -1 if error.
-	// make sure can't open same file twice
+int sfs_fopen(char *name) { // make sure can't open same file twice
+	
+	if (nameValid(name) < 0)
+		return -1;
+
+
+
+	// find file by name - iterate root directory
+	int i;
+	int iNodeIndex = -1;
+	int exists = 0;
+	for (i=0; i<NUM_FILES; i++) {
+		if (!strcmp(files[i].name, name)) {
+			exists = 1;
+			iNodeIndex = files[i].num;
+			break;
+		}
+	}
+
+	if (exists) {
+		// check if file already open - iterate fd table
+		for (i=0; i<NUM_FILES; i++) {
+			if (fd[i].inodeIndex == iNodeIndex) {
+				return i; // file already open
+			}
+		}
+	} else {
+		// find slot in root direcory
+		int fileIndex = -1;
+		for (i=0; i<NUM_FILES; i++) {
+			if (files[i].num == -1) {
+				fileIndex = i;
+				break;
+			}
+		}
+		if (fileIndex == -1) {
+			printf("Root directory full - has 99 files\n");
+			return -1;
+		}
+
+		// find unused inode
+		for (i=1; i<INODE_LEN; i++) {
+			if (iNodeTable[i].data_ptrs[0] == -1) {
+				iNodeIndex = i;
+				break;
+			}
+		}
+		if (iNodeIndex == -1) {
+			printf("Investigate!!!!\n");
+			return -1;
+		}
+
+		// got fileIndex and iNodeIndex
+		strcpy(files[fileIndex].name, name);
+		files[fileIndex].num = iNodeIndex;
+		// write to disk
+		if (writeINode(iNodeIndex) < 0)
+			printf("Failure(s) writing iNode to disk");
+		if (writeRootDirectory() < 0)
+			printf("Failure(s) writing root directory to disk");
+	}
+
+	// file is not open yet - find fd slot - iterate fd table
+	int fdIndex = -1;
+	for (i=0; i<NUM_FILES; i++) {
+		if (fd[i].inodeIndex == -1) { // found free file descriptor slot
+			fdIndex = i;
+			break;
+		}
+	}
+	if (i == NUM_FILES) { // found no available slot
+		printf("Open file descriptor table full\n"); // should not happen because no more than 99 files anyway
+		return -1;
+	}
+
+	int rwptr = iNodeTable[iNodeIndex].size;
+	fd[fdIndex] = (file_descriptor) {iNodeIndex, &iNodeTable[iNodeIndex], rwptr}; // ?
+
+	return fdIndex;
 }
 int sfs_fclose(int fileID) {
 
