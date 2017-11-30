@@ -30,6 +30,7 @@ struct inode_t iNodeTable[INODE_LEN];
 //int directoryEntryIndex = 0;
 //int lastDirectoryEntryIndex = 0;
 void* buffer;
+int i; // iterate forloops
 
 // ********************************** HELPER FUNCTIONS ******************************************
 
@@ -108,7 +109,6 @@ void mksfs(int fresh) {
 
 
 
-		int i;
 		// init directory entries
 		for (i=0; i<NUM_FILES; i++) {
 			files[i].num = -1;
@@ -264,6 +264,96 @@ int sfs_fread(int fileID, char *buf, int length) {
 	
 }
 int sfs_fwrite(int fileID, const char *buf, int length) {
+	if (length < 0) {
+		printf("Length cannot be negative");
+		return -1;
+	}
+
+	file_descriptor myFd = fd[fileID];
+
+	// check that file is open
+	if (myFd.inodeIndex == -1) {
+		printf("File is not open");
+		return -1;
+	}
+
+	// calculate nb of blocks needed and index inside last block
+	int rwptr = myFd.rwptr;
+	int startBlockIndex = rwptr / BLOCK_SIZE;
+	int startIndexInBlock = rwptr % BLOCK_SIZE; // start writing here
+	int endRwptr = rwptr + length;
+	int endBlockIndex = endRwptr / BLOCK_SIZE;
+	int endIndexInBlock = endRwptr % BLOCK_SIZE; // exclusive
+
+	int bytesWritten = 0;
+
+	if (startBlockIndex > 11) {
+		// TODO !!!!
+	} else {
+		// write to first block
+		buffer = (void*) malloc(BLOCK_SIZE);
+
+		// ** replace end of first block
+		// read entire startBlock
+		inode_t myINode = iNodeTable[fileID];
+		memset(buffer, 0, BLOCK_SIZE);
+		if (myINode.data_ptrs[startBlockIndex] == -1) { // startIndexInBlock should be 0
+			myINode.data_ptrs[startBlockIndex] = get_index();
+			if (startIndexInBlock != 0)
+				printf("startIndexInBlock should be 0. Investigate.\n");
+		}
+		read_blocks(myINode.data_ptrs[startBlockIndex], 1, buffer);
+		memcpy(buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock); // !!!!! double check this
+		write_blocks(myINode.data_ptrs[startBlockIndex], 1, buffer);
+		bytesWritten += BLOCK_SIZE-startIndexInBlock;
+		force_set_index(myINode.data_ptrs[startBlockIndex]); // in case block was originally empty
+
+
+		if (endBlockIndex > 11) {
+			for(i=startBlockIndex+1; i<=11; i++) { // ** replace the whole block
+				memset(buffer, 0, BLOCK_SIZE);
+				memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE); // !!!!! cast buf to void*?
+				if (myINode.data_ptrs[i] != -1)
+					printf("data_ptr should be -1. Investigate.\n");
+				myINode.data_ptrs[i] = get_index();
+				write_blocks(myINode.data_ptrs[i], 1, buffer);
+				bytesWritten += BLOCK_SIZE;
+				force_set_index(myINode.data_ptrs[i]);
+			}
+
+			// TODO !!!!
+			// deal with indrect pointers
+
+		} else {
+			for(i=startBlockIndex+1; i<=endBlockIndex; i++) { // ** replace beginning of last block - partly read buf
+				if (i == endBlockIndex) {
+					memset(buffer, 0, BLOCK_SIZE);
+					memcpy(buffer, &buf[bytesWritten], length - bytesWritten); // !!!!! cast buf to void*? // 
+					if (myINode.data_ptrs[i] != -1)
+						printf("data_ptr should be -1. Investigate.\n");
+					myINode.data_ptrs[i] = get_index();
+					write_blocks(myINode.data_ptrs[i], 1, buffer);
+					bytesWritten += BLOCK_SIZE;
+					force_set_index(myINode.data_ptrs[i]);
+				} else {
+					memset(buffer, 0, BLOCK_SIZE);
+					memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE); // !!!!! cast buf to void*?
+					if (myINode.data_ptrs[i] != -1)
+						printf("data_ptr should be -1. Investigate.\n");
+					myINode.data_ptrs[i] = get_index();
+					write_blocks(myINode.data_ptrs[i], 1, buffer);
+					bytesWritten += BLOCK_SIZE;
+					force_set_index(myINode.data_ptrs[i]);
+				}
+			}
+		}
+
+		
+	}
+
+	myFD.rwptr = rwptr + bytesWritten;
+	free(buffer);
+
 
 }
 int sfs_fseek(int fileID, int loc) {
