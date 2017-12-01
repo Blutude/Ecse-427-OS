@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fuse.h>
+//#include <fuse.h>
 #include <strings.h>
 #include "disk_emu.h"
 #define AZRAK_RONY_DISK "sfs_disk.disk"
@@ -12,7 +12,6 @@
 #define BITMAP_ROW_SIZE (NUM_BLOCKS/8) // this essentially mimcs the number of rows we have in the bitmap. we will have 128 rows. 
 #define BLOCK_SIZE 1024
 #define INODE_LEN 100
-#define NUM_BLOCKS_ROOTDIR 5
 #define DATA_BLOCKS_START INODE_LEN+1
 #define NUM_FILES INODE_LEN-1  // INODE_LEN - 1 because first INODE belongs to root directory
 
@@ -27,29 +26,30 @@ struct superblock_t superblock;
 struct file_descriptor fd[NUM_FILES]; 
 struct directory_entry files[NUM_FILES];
 struct inode_t iNodeTable[INODE_LEN];
-//int directoryEntryIndex = 0;
-//int lastDirectoryEntryIndex = 0;
 void* buffer;
 int i; // iterate forloops
+int nbBlocksRoot;
+int nbBlocksINodeTable;
+
 
 // ********************************** HELPER FUNCTIONS ******************************************
 
 
 // **** WRITING TO DISK
-int writeINode(int i) { // write to disk
-	buffer = (void*) malloc(BLOCK_SIZE);
-	memset(buffer, 0, BLOCK_SIZE);
-	memcpy(buffer, &iNodeTable[i], sizeof(inode_t));
-	int r = write_blocks(1+i, 1, buffer); // 1+i because index 0 is for superblock. 1 inode = 1 block???
+int writeINodeTable() { // write to disk
+	buffer = (void*) malloc(nbBlocksINodeTable*BLOCK_SIZE);
+	memset(buffer, 0, nbBlocksINodeTable*BLOCK_SIZE);
+	memcpy(buffer, iNodeTable, INODE_LEN*sizeof(inode_t));
+	int r = write_blocks(1, nbBlocksINodeTable, buffer); // 1+i because index 0 is for superblock. 1 inode = 1 block???
 	free(buffer);
 	return r;
 }
 
-int writeRootDirectory() { // write to disk. 5 blocks good enough??
-	buffer = (void*) malloc(NUM_BLOCKS_ROOTDIR*BLOCK_SIZE);
-	memset(buffer, 0, NUM_BLOCKS_ROOTDIR*BLOCK_SIZE);
+int writeRootDirectory() { // write to disk.
+	buffer = (void*) malloc(nbBlocksRoot*BLOCK_SIZE);
+	memset(buffer, 0, nbBlocksRoot*BLOCK_SIZE);
 	memcpy(buffer, files, NUM_FILES*sizeof(directory_entry));
-	int r = write_blocks(DATA_BLOCKS_START, 5, buffer);
+	int r = write_blocks(DATA_BLOCKS_START, nbBlocksRoot, buffer);
 	free(buffer);
 	return r;
 }
@@ -81,6 +81,10 @@ int nameValid(char* name) {
 	return 0;
 }
 
+int deletedis() {
+	return INODE_LEN*sizeof(inode_t)/BLOCK_SIZE + (INODE_LEN*sizeof(inode_t)%BLOCK_SIZE > 0);
+}
+
 
 // *********************************************************************************
 // *********************************************************************************
@@ -110,6 +114,8 @@ void mksfs(int fresh) {
 
 
 		// init directory entries
+		// calculate nbBlocksRoot i.e nb of blocks needed for root directory
+		nbBlocksRoot = NUM_FILES*sizeof(directory_entry)/BLOCK_SIZE + (NUM_FILES*sizeof(directory_entry)%BLOCK_SIZE > 0); // getting ceiling value
 		for (i=0; i<NUM_FILES; i++) {
 			files[i].num = -1;
 			files[i].name[0] = 0; // empty string
@@ -117,31 +123,32 @@ void mksfs(int fresh) {
 		if (writeRootDirectory() < 0)
 			printf("Failure(s) writing root directory\n");
 		// updating freeBitMap
-		force_set_index(DATA_BLOCKS_START); // !!!! make change fixed root directory location
-		force_set_index(DATA_BLOCKS_START+1);
-		force_set_index(DATA_BLOCKS_START+2);
-		force_set_index(DATA_BLOCKS_START+3);
-		force_set_index(DATA_BLOCKS_START+4);
+		for (i=0; i<nbBlocksRoot; i++) {
+			force_set_index(DATA_BLOCKS_START+i);
+		}
+		if (nbBlocksRoot != 3)
+			printf("nbBlocksRoot is %d and not 3. Need to change iNodeTable[0] and maybe other stuff\n", nbBlocksRoot);
+
+
+
+		// init root inode and inode table.
+		// calculate nbBlocksINodeTable i.e nb of blocks needed for inode table
+		nbBlocksINodeTable = INODE_LEN*sizeof(inode_t)/BLOCK_SIZE + (INODE_LEN*sizeof(inode_t)%BLOCK_SIZE > 0); // getting ceiling value
+		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {DATA_BLOCKS_START, DATA_BLOCKS_START+1, DATA_BLOCKS_START+2, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // root INode points to first 3 blocks of data blocks
+		for (i=1; i<INODE_LEN; i++)
+			iNodeTable[i] = (inode_t) {777, 0, 0, 0, 0, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1};
+		if (writeINodeTable() < 0)
+				printf("Failure(s) writing inode table\n");
+		for (i=0; i<nbBlocksINodeTable; i++)
+			force_set_index(i+1); // 0 is for superblock
+		//if (nbBlocksINodeTable != )
 
 
 
 		// init file descriptors. Does not write to disk, is in-memory
-		for (i=0; i<NUM_FILES; i++) {
+		fd[0] = (file_descriptor) {0, &iNodeTable[0], 0};
+		for (i=1; i<NUM_FILES; i++) {
 			fd[i] = (file_descriptor) {-1, NULL, 0};
-		}
-
-
-
-		// init root inode and inode table. !!!! CHANGE this to get index to we find where to write root directory? (location doesn't need to be fixed)
-		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {DATA_BLOCKS_START, DATA_BLOCKS_START+1, DATA_BLOCKS_START+2, DATA_BLOCKS_START+3, DATA_BLOCKS_START+4, -1, -1, -1, -1, -1, -1, -1}, -1}; // ?? root INode points to 5 blocks (size of root directory)
-		if (writeINode(0) < 0)
-			printf("Failure(s) writing inode nb%d\n", 0);
-		force_set_index(1); // updating freeBitMap
-		for (i=1; i<INODE_LEN; i++) {
-			iNodeTable[i] = (inode_t) {777, 0, 0, 0, 0, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // ??
-			if (writeINode(i) < 0)
-				printf("Failure(s) writing inode nb%d\n", i);
-			force_set_index(i+1); // updating freeBitMap
 		}
 
 
@@ -198,7 +205,7 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 
 	if (exists) {
 		// check if file already open - iterate fd table
-		for (i=0; i<NUM_FILES; i++) {
+		for (i=1; i<NUM_FILES; i++) { // 0 is for root directory
 			if (fd[i].inodeIndex == iNodeIndex) {
 				return i; // file already open
 			}
@@ -233,7 +240,7 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 		strcpy(files[fileIndex].name, name);
 		files[fileIndex].num = iNodeIndex;
 		// write to disk
-		if (writeINode(iNodeIndex) < 0)
+		if (writeINodeTable() < 0)
 			printf("Failure(s) writing iNode to disk");
 		if (writeRootDirectory() < 0)
 			printf("Failure(s) writing root directory to disk");
@@ -241,7 +248,7 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 
 	// file is not open yet - find fd slot - iterate fd table
 	int fdIndex = -1;
-	for (i=0; i<NUM_FILES; i++) {
+	for (i=1; i<NUM_FILES; i++) { // 0 is for root directory
 		if (fd[i].inodeIndex == -1) { // found free file descriptor slot
 			fdIndex = i;
 			break;
@@ -351,10 +358,12 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		
 	}
 
-	myFD.rwptr = rwptr + bytesWritten;
+	myFd.rwptr = rwptr + bytesWritten;
 	free(buffer);
+	writeINodeTable();
+	writeFreeBitMap();
 
-
+	return bytesWritten;
 }
 int sfs_fseek(int fileID, int loc) {
 
