@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <fuse.h>
+#include <fuse.h>
 #include <strings.h>
 #include "disk_emu.h"
 #define AZRAK_RONY_DISK "sfs_disk.disk"
@@ -12,7 +12,6 @@
 #define BITMAP_ROW_SIZE (NUM_BLOCKS/8) // this essentially mimcs the number of rows we have in the bitmap. we will have 128 rows. 
 #define BLOCK_SIZE 1024
 #define INODE_LEN 100
-#define DATA_BLOCKS_START INODE_LEN+1
 #define NUM_FILES INODE_LEN-1  // INODE_LEN - 1 because first INODE belongs to root directory
 
 /* macros */
@@ -30,6 +29,7 @@ void* buffer;
 int i; // iterate forloops
 int nbBlocksRoot;
 int nbBlocksINodeTable;
+int dataBlocksStartIndex;
 
 
 // ********************************** HELPER FUNCTIONS ******************************************
@@ -39,8 +39,8 @@ int nbBlocksINodeTable;
 int writeINodeTable() { // write to disk
 	buffer = (void*) malloc(nbBlocksINodeTable*BLOCK_SIZE);
 	memset(buffer, 0, nbBlocksINodeTable*BLOCK_SIZE);
-	memcpy(buffer, iNodeTable, INODE_LEN*sizeof(inode_t));
-	int r = write_blocks(1, nbBlocksINodeTable, buffer); // 1+i because index 0 is for superblock. 1 inode = 1 block???
+	memcpy(buffer, iNodeTable, (INODE_LEN)*(sizeof(inode_t)));
+	int r = write_blocks(1, nbBlocksINodeTable, buffer); // 1 because index 0 is for superblock. 1 inode = 1 block???
 	free(buffer);
 	return r;
 }
@@ -48,8 +48,8 @@ int writeINodeTable() { // write to disk
 int writeRootDirectory() { // write to disk.
 	buffer = (void*) malloc(nbBlocksRoot*BLOCK_SIZE);
 	memset(buffer, 0, nbBlocksRoot*BLOCK_SIZE);
-	memcpy(buffer, files, NUM_FILES*sizeof(directory_entry));
-	int r = write_blocks(DATA_BLOCKS_START, nbBlocksRoot, buffer);
+	memcpy(buffer, files, (NUM_FILES)*(sizeof(directory_entry)));
+	int r = write_blocks(dataBlocksStartIndex, nbBlocksRoot, buffer);
 	free(buffer);
 	return r;
 }
@@ -81,10 +81,6 @@ int nameValid(char* name) {
 	return 0;
 }
 
-int deletedis() {
-	return INODE_LEN*sizeof(inode_t)/BLOCK_SIZE + (INODE_LEN*sizeof(inode_t)%BLOCK_SIZE > 0);
-}
-
 
 // *********************************************************************************
 // *********************************************************************************
@@ -113,9 +109,25 @@ void mksfs(int fresh) {
 
 
 
+		// init root inode and inode table.
+		// calculate nbBlocksINodeTable i.e nb of blocks needed for inode table
+		nbBlocksINodeTable = (INODE_LEN)*(sizeof(inode_t))/BLOCK_SIZE + (((INODE_LEN)*(sizeof(inode_t)))%BLOCK_SIZE > 0); // getting ceiling value = 8
+		dataBlocksStartIndex = 1+nbBlocksINodeTable; // = 9
+		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {dataBlocksStartIndex, dataBlocksStartIndex+1, dataBlocksStartIndex+2, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // root INode points to first 3 blocks of data blocks
+		for (i=1; i<INODE_LEN; i++)
+			iNodeTable[i] = (inode_t) {777, 0, 0, 0, 0, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1};
+		if (writeINodeTable() < 0)
+				printf("Failure(s) writing inode table\n");
+		for (i=0; i<nbBlocksINodeTable; i++)
+			force_set_index(i+1); // 0 is for superblock
+		if (nbBlocksINodeTable != 8)
+			printf("nbBlocksINodeTable is %d and not 8. Need to change stuff\n", nbBlocksINodeTable);
+
+
+
 		// init directory entries
 		// calculate nbBlocksRoot i.e nb of blocks needed for root directory
-		nbBlocksRoot = NUM_FILES*sizeof(directory_entry)/BLOCK_SIZE + (NUM_FILES*sizeof(directory_entry)%BLOCK_SIZE > 0); // getting ceiling value
+		nbBlocksRoot = (NUM_FILES)*(sizeof(directory_entry))/BLOCK_SIZE + (((NUM_FILES)*(sizeof(directory_entry)))%BLOCK_SIZE > 0); // getting ceiling value = 3
 		for (i=0; i<NUM_FILES; i++) {
 			files[i].num = -1;
 			files[i].name[0] = 0; // empty string
@@ -124,24 +136,10 @@ void mksfs(int fresh) {
 			printf("Failure(s) writing root directory\n");
 		// updating freeBitMap
 		for (i=0; i<nbBlocksRoot; i++) {
-			force_set_index(DATA_BLOCKS_START+i);
+			force_set_index(dataBlocksStartIndex+i);
 		}
 		if (nbBlocksRoot != 3)
 			printf("nbBlocksRoot is %d and not 3. Need to change iNodeTable[0] and maybe other stuff\n", nbBlocksRoot);
-
-
-
-		// init root inode and inode table.
-		// calculate nbBlocksINodeTable i.e nb of blocks needed for inode table
-		nbBlocksINodeTable = INODE_LEN*sizeof(inode_t)/BLOCK_SIZE + (INODE_LEN*sizeof(inode_t)%BLOCK_SIZE > 0); // getting ceiling value
-		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {DATA_BLOCKS_START, DATA_BLOCKS_START+1, DATA_BLOCKS_START+2, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // root INode points to first 3 blocks of data blocks
-		for (i=1; i<INODE_LEN; i++)
-			iNodeTable[i] = (inode_t) {777, 0, 0, 0, 0, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1};
-		if (writeINodeTable() < 0)
-				printf("Failure(s) writing inode table\n");
-		for (i=0; i<nbBlocksINodeTable; i++)
-			force_set_index(i+1); // 0 is for superblock
-		//if (nbBlocksINodeTable != )
 
 
 
