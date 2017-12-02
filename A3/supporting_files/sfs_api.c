@@ -306,9 +306,6 @@ int sfs_fclose(int fileID) {
 
 }
 int sfs_fread(int fileID, char *buf, int length) {
-	
-}
-int sfs_fwrite(int fileID, const char *buf, int length) {
 	if (length < 0) {
 		printf("Length cannot be negative");
 		return -1;
@@ -329,6 +326,34 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	int startBlockIndex = rwptr / BLOCK_SIZE;
 	int startIndexInBlock = rwptr % BLOCK_SIZE; // start writing here
 	int endRwptr = rwptr + length;
+	int endBlockIndex = endRwptr / BLOCK_SIZE;
+	int endIndexInBlock = endRwptr % BLOCK_SIZE; // exclusive
+
+	int bytesWritten = 0;
+
+	buffer = (void*) malloc(BLOCK_SIZE);
+}
+int sfs_fwrite(int fileID, const char *buf, int length) {
+	if (length < 0) {
+		printf("Length cannot be negative");
+		return -1;
+	}
+
+	file_descriptor myFd = fd[fileID];
+
+	// check that file is open
+	if (myFd.inodeIndex == -1) {
+		printf("File is not open");
+		return -1;
+	}
+
+	inode_t myINode = iNodeTable[fileID];
+
+	// calculate nb of blocks needed and index inside last block
+	int rwptrOriginal = myFd.rwptr;
+	int startBlockIndex = rwptrOriginal / BLOCK_SIZE;
+	int startIndexInBlock = rwptrOriginal % BLOCK_SIZE; // start writing here
+	int endRwptr = rwptrOriginal + length;
 	int endBlockIndex = endRwptr / BLOCK_SIZE;
 	int endIndexInBlock = endRwptr % BLOCK_SIZE; // exclusive
 
@@ -363,20 +388,17 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				write_blocks(addresses[indirectBlockIndex], 1, buffer);
 				bytesWritten += BLOCK_SIZE-startIndexInBlock;
 			} else if (i == endBlockIndex) {
-				// fill up beginning of block, write to disk
+				// read block (caution to not overwrite end of block), fill up beginning of block, write to disk
+				read_blocks(addresses[indirectBlockIndex], 1, buffer);
 				memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
 				if (length - bytesWritten != endIndexInBlock)
 					printf("Investigate endIndexInBlock in indirect pointers\n");
-				if (addresses[indirectBlockIndex] != -1)
-					printf("Index should be -1. Investigate.\n");
 				addresses[indirectBlockIndex] = get_index();
 				write_blocks(addresses[indirectBlockIndex], 1, buffer);
 				bytesWritten += length - bytesWritten;
 			} else {
 				// fill up entire block, write to disk
 				memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
-				if (addresses[indirectBlockIndex] != -1)
-					printf("Index should be -1. Investigate.\n");
 				addresses[indirectBlockIndex] = get_index();
 				write_blocks(addresses[indirectBlockIndex], 1, buffer);
 				bytesWritten += BLOCK_SIZE;
@@ -430,7 +452,9 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 					addresses[i] = get_index();
 					force_set_index(addresses[i]);
 					if (nbExtraBlocks == 0) { // last block to write
+						// read block (caution to not overwrite end of block), fill up beginning of block, write to disk
 						memset(buffer, 0, BLOCK_SIZE);
+						read_blocks(addresses[i], 1, buffer);
 						memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
 						if (length - bytesWritten != endIndexInBlock)
 							printf("Investigate endIndexInBlock in indirect pointers\n");
@@ -458,11 +482,10 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				if (i == endBlockIndex) {
 					// fill up beginning of block, write to disk
 					memset(buffer, 0, BLOCK_SIZE);
+					read_blocks(myINode.data_ptrs[i], 1, buffer);
 					memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
 					if (length - bytesWritten != endIndexInBlock)
 						printf("Investigate endIndexInBlock in direct pointers\n");
-					if (myINode.data_ptrs[i] != -1)
-						printf("data_ptr should be -1. Investigate.\n");
 					myINode.data_ptrs[i] = get_index();
 					write_blocks(myINode.data_ptrs[i], 1, buffer);
 					bytesWritten += length - bytesWritten;
@@ -471,8 +494,6 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 					// fill up entire block, write to disk
 					memset(buffer, 0, BLOCK_SIZE);
 					memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
-					if (myINode.data_ptrs[i] != -1)
-						printf("data_ptr should be -1. Investigate.\n");
 					myINode.data_ptrs[i] = get_index();
 					write_blocks(myINode.data_ptrs[i], 1, buffer);
 					bytesWritten += BLOCK_SIZE;
@@ -485,7 +506,10 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	}
 
 	myFd.rwptr += bytesWritten;
-	myINode.size += bytesWritten;
+	if (myFd.size < myFd.rwptr) {
+		// update size
+		myFd.size = myFd.rwptr;
+	}
 	free(buffer);
 	writeINodeTable();
 	writeFreeBitMap();
