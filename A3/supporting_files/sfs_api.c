@@ -339,9 +339,6 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	if (startBlockIndex > 11) {
 		// indirect pointers
 
-		// ** replace end of first block
-		// read entire startBlock
-
 		memset(buffer, 0, BLOCK_SIZE);
 		// read indirect block
 		read_blocks(myINode.indirectPointer, 1, buffer);
@@ -394,8 +391,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	} else {
 		// direct pointers
 
-		// ** replace end of first block
-		// read entire startBlock
+		// first block: read entire block, fill up block space, write back to disk
 		memset(buffer, 0, BLOCK_SIZE);
 		if (myINode.data_ptrs[startBlockIndex] == -1) { // startIndexInBlock should be 0
 			myINode.data_ptrs[startBlockIndex] = get_index();
@@ -410,6 +406,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 
 
 		if (endBlockIndex > 11) {
+			// write to all direct pointer blocks
 			for(i=startBlockIndex+1; i<=11; i++) { // ** replace the whole block
 				memset(buffer, 0, BLOCK_SIZE);
 				memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
@@ -456,8 +453,10 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 			memcpy(buffer, addresses, BLOCK_SIZE);
 			write_blocks(myINode.indirectPointer, 1, buffer);
 		} else {
-			for(i=startBlockIndex+1; i<=endBlockIndex; i++) { // ** replace beginning of last block - partly read buf
+			// only direct pointers
+			for(i=startBlockIndex+1; i<=endBlockIndex; i++) { 
 				if (i == endBlockIndex) {
+					// fill up beginning of block, write to disk
 					memset(buffer, 0, BLOCK_SIZE);
 					memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
 					if (length - bytesWritten != endIndexInBlock)
@@ -469,6 +468,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 					bytesWritten += length - bytesWritten;
 					force_set_index(myINode.data_ptrs[i]);
 				} else {
+					// fill up entire block, write to disk
 					memset(buffer, 0, BLOCK_SIZE);
 					memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
 					if (myINode.data_ptrs[i] != -1)
