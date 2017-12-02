@@ -4,6 +4,10 @@
 #include <stdint.h>
 
 #define NUM_BLOCKS 1024
+#define SIZE (NUM_BLOCKS/8) //128
+
+
+uint8_t free_bit_map[SIZE];
 
 /*
  * @short force an index to be set.

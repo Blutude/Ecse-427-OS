@@ -12,7 +12,11 @@
 #define BITMAP_ROW_SIZE (NUM_BLOCKS/8) // this essentially mimcs the number of rows we have in the bitmap. we will have 128 rows. 
 #define BLOCK_SIZE 1024
 #define INODE_LEN 100
-#define NUM_FILES INODE_LEN-1  // INODE_LEN - 1 because first INODE belongs to root directory
+#define NUM_FILES (INODE_LEN-1)  // INODE_LEN - 1 because first INODE belongs to root directory
+#define NUM_BLOCKS_INODETABLE ((INODE_LEN)*(sizeof(inode_t))/BLOCK_SIZE + (((INODE_LEN)*(sizeof(inode_t)))%BLOCK_SIZE > 0)) // getting ceiling value = 8
+#define NUM_BLOCKS_ROOTDIR ((NUM_FILES)*(sizeof(directory_entry))/BLOCK_SIZE + (((NUM_FILES)*(sizeof(directory_entry)))%BLOCK_SIZE > 0)) // getting ceiling value = 3
+#define DATABLOCKS_START_ADDRESS (1+NUM_BLOCKS_INODETABLE) // = 9
+#define NUM_ADDRESSES_INDIRECT (BLOCK_SIZE/sizeof(int))
 
 /* macros */
 #define FREE_BIT(_data, _which_bit) \
@@ -27,9 +31,6 @@ struct directory_entry files[NUM_FILES];
 struct inode_t iNodeTable[INODE_LEN];
 void* buffer;
 int i; // iterate forloops
-int nbBlocksRoot;
-int nbBlocksINodeTable;
-int dataBlocksStartIndex;
 
 
 // ********************************** HELPER FUNCTIONS ******************************************
@@ -37,26 +38,27 @@ int dataBlocksStartIndex;
 
 // **** WRITING TO DISK
 int writeINodeTable() { // write to disk
-	buffer = (void*) malloc(nbBlocksINodeTable*BLOCK_SIZE);
-	memset(buffer, 0, nbBlocksINodeTable*BLOCK_SIZE);
+	buffer = (void*) malloc(NUM_BLOCKS_INODETABLE*BLOCK_SIZE);
+	memset(buffer, 0, NUM_BLOCKS_INODETABLE*BLOCK_SIZE);
 	memcpy(buffer, iNodeTable, (INODE_LEN)*(sizeof(inode_t)));
-	int r = write_blocks(1, nbBlocksINodeTable, buffer); // 1 because index 0 is for superblock. 1 inode = 1 block???
+	int r = write_blocks(1, NUM_BLOCKS_INODETABLE, buffer); // 1 because index 0 is for superblock. 1 inode = 1 block???
 	free(buffer);
 	return r;
 }
 
 int writeRootDirectory() { // write to disk.
-	buffer = (void*) malloc(nbBlocksRoot*BLOCK_SIZE);
-	memset(buffer, 0, nbBlocksRoot*BLOCK_SIZE);
+	buffer = (void*) malloc(NUM_BLOCKS_ROOTDIR*BLOCK_SIZE);
+	memset(buffer, 0, NUM_BLOCKS_ROOTDIR*BLOCK_SIZE);
 	memcpy(buffer, files, (NUM_FILES)*(sizeof(directory_entry)));
-	int r = write_blocks(dataBlocksStartIndex, nbBlocksRoot, buffer);
+	int r = write_blocks(DATABLOCKS_START_ADDRESS, NUM_BLOCKS_ROOTDIR, buffer);
 	free(buffer);
 	return r;
 }
 
 int writeFreeBitMap() { // write to disk 
 	buffer = (void*) malloc(BLOCK_SIZE);
-	memset(buffer, 0, BLOCK_SIZE);
+	memset(buffer, 1, BLOCK_SIZE);
+	memcpy(buffer, free_bit_map, (BITMAP_ROW_SIZE)*(sizeof(uint8_t)));
 	int r = write_blocks(NUM_BLOCKS-1, 1, buffer);
 	free(buffer);
 	return r;
@@ -81,6 +83,13 @@ int nameValid(char* name) {
 	return 0;
 }
 
+int assertDefinedValues() {
+	if (NUM_BLOCKS_ROOTDIR != 3 || NUM_BLOCKS_INODETABLE != 8 || DATABLOCKS_START_ADDRESS != 9)
+		return -1;
+	else
+		return 0;
+}
+
 
 // *********************************************************************************
 // *********************************************************************************
@@ -90,6 +99,10 @@ int nameValid(char* name) {
 //uint8_t free_bit_map[BITMAP_ROW_SIZE] = { [0 ... BITMAP_ROW_SIZE - 1] = UINT8_MAX };
 
 void mksfs(int fresh) {
+	if (assertDefinedValues() == -1) {
+		printf("Issue with defined values. Investigate.\n");
+		return;
+	}
 	// clear inode table ???? why?
 	int r;
 	if (fresh) {
@@ -110,24 +123,17 @@ void mksfs(int fresh) {
 
 
 		// init root inode and inode table.
-		// calculate nbBlocksINodeTable i.e nb of blocks needed for inode table
-		nbBlocksINodeTable = (INODE_LEN)*(sizeof(inode_t))/BLOCK_SIZE + (((INODE_LEN)*(sizeof(inode_t)))%BLOCK_SIZE > 0); // getting ceiling value = 8
-		dataBlocksStartIndex = 1+nbBlocksINodeTable; // = 9
-		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {dataBlocksStartIndex, dataBlocksStartIndex+1, dataBlocksStartIndex+2, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // root INode points to first 3 blocks of data blocks
+		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {DATABLOCKS_START_ADDRESS, DATABLOCKS_START_ADDRESS+1, DATABLOCKS_START_ADDRESS+2, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // root INode points to first 3 blocks of data blocks
 		for (i=1; i<INODE_LEN; i++)
 			iNodeTable[i] = (inode_t) {777, 0, 0, 0, 0, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1};
 		if (writeINodeTable() < 0)
 				printf("Failure(s) writing inode table\n");
-		for (i=0; i<nbBlocksINodeTable; i++)
+		for (i=0; i<NUM_BLOCKS_INODETABLE; i++)
 			force_set_index(i+1); // 0 is for superblock
-		if (nbBlocksINodeTable != 8)
-			printf("nbBlocksINodeTable is %d and not 8. Need to change stuff\n", nbBlocksINodeTable);
 
 
 
 		// init directory entries
-		// calculate nbBlocksRoot i.e nb of blocks needed for root directory
-		nbBlocksRoot = (NUM_FILES)*(sizeof(directory_entry))/BLOCK_SIZE + (((NUM_FILES)*(sizeof(directory_entry)))%BLOCK_SIZE > 0); // getting ceiling value = 3
 		for (i=0; i<NUM_FILES; i++) {
 			files[i].num = -1;
 			files[i].name[0] = 0; // empty string
@@ -135,11 +141,9 @@ void mksfs(int fresh) {
 		if (writeRootDirectory() < 0)
 			printf("Failure(s) writing root directory\n");
 		// updating freeBitMap
-		for (i=0; i<nbBlocksRoot; i++) {
-			force_set_index(dataBlocksStartIndex+i);
+		for (i=0; i<NUM_BLOCKS_ROOTDIR; i++) {
+			force_set_index(DATABLOCKS_START_ADDRESS+i);
 		}
-		if (nbBlocksRoot != 3)
-			printf("nbBlocksRoot is %d and not 3. Need to change iNodeTable[0] and maybe other stuff\n", nbBlocksRoot);
 
 
 
@@ -154,25 +158,61 @@ void mksfs(int fresh) {
 		// writing freeBitMap to disk
 		if (writeFreeBitMap() < 0)
 			printf("Failure(s) writing freeBitMap to disk\n");
+		force_set_index(NUM_BLOCKS-1);
 	
 	} else {
 		r = init_disk(AZRAK_RONY_DISK, BLOCK_SIZE, NUM_BLOCKS);
+
+
+		// read freebitmap
+		buffer = (void*) malloc(BLOCK_SIZE);
+		memset(buffer, 1, BLOCK_SIZE);
+		read_blocks(NUM_BLOCKS-1, 1, buffer);
+		memcpy(free_bit_map, buffer, (BITMAP_ROW_SIZE)*(sizeof(uint8_t)));
+		free(buffer);
+		force_set_index(NUM_BLOCKS-1);
 		
 
-		//read superblock
+		// read superblock
+		buffer = (void*) malloc(BLOCK_SIZE);
+		memset(buffer, 0, BLOCK_SIZE);
 		read_blocks(0, 1, buffer);
 		memcpy(&superblock, buffer, sizeof(superblock_t));
-
-		
-
-		// read directory entries
-		// !!!! might make root directory no fix. Need to look for location through first inode
+		free(buffer);
+		force_set_index(0);
 
 
+		// read inode table
+		buffer = (void*) malloc(NUM_BLOCKS_INODETABLE*BLOCK_SIZE);
+		memset(buffer, 0, NUM_BLOCKS_INODETABLE*BLOCK_SIZE);
+		read_blocks(1, NUM_BLOCKS_INODETABLE, buffer);
+		memcpy(iNodeTable, buffer, INODE_LEN*sizeof(inode_t));
+		free(buffer);
+		for (i=0; i<NUM_BLOCKS_INODETABLE; i++)
+			force_set_index(i+1);
+
+
+		// read root directory
+		buffer = (void*) malloc(NUM_BLOCKS_ROOTDIR);
+		memset(buffer, 0, NUM_BLOCKS_ROOTDIR*BLOCK_SIZE);
+		read_blocks(DATABLOCKS_START_ADDRESS, NUM_BLOCKS_ROOTDIR, buffer);
+		memcpy(files, buffer, NUM_FILES*sizeof(directory_entry));
+		free(buffer);
+		for (i=0; i<NUM_BLOCKS_ROOTDIR; i++)
+			force_set_index(i+DATABLOCKS_START_ADDRESS);
+
+
+		// init file descriptors. Is not written in disk, is in-memory
+		fd[0] = (file_descriptor) {0, &iNodeTable[0], 0};
+		for (i=1; i<NUM_FILES; i++) {
+			fd[i] = (file_descriptor) {-1, NULL, 0};
+		}
 	}
 
-	if (r != 0)
+	if (r != 0) {
+		printf("Failure initializing disk\n");
 		return;
+	}
 }
 
 int sfs_getnextfilename(char *fname) {
@@ -282,6 +322,8 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		return -1;
 	}
 
+	inode_t myINode = iNodeTable[fileID];
+
 	// calculate nb of blocks needed and index inside last block
 	int rwptr = myFd.rwptr;
 	int startBlockIndex = rwptr / BLOCK_SIZE;
@@ -300,7 +342,6 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 
 		// ** replace end of first block
 		// read entire startBlock
-		inode_t myINode = iNodeTable[fileID];
 		memset(buffer, 0, BLOCK_SIZE);
 		if (myINode.data_ptrs[startBlockIndex] == -1) { // startIndexInBlock should be 0
 			myINode.data_ptrs[startBlockIndex] = get_index();
@@ -308,7 +349,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				printf("startIndexInBlock should be 0. Investigate.\n");
 		}
 		read_blocks(myINode.data_ptrs[startBlockIndex], 1, buffer);
-		memcpy(buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock); // !!!!! double check this
+		memcpy((char*)buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock); // casting to char because in some c compilers, void pointer arithmetic is not allowed. Also sizeof(char) == 1 bytes
 		write_blocks(myINode.data_ptrs[startBlockIndex], 1, buffer);
 		bytesWritten += BLOCK_SIZE-startIndexInBlock;
 		force_set_index(myINode.data_ptrs[startBlockIndex]); // in case block was originally empty
@@ -317,7 +358,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		if (endBlockIndex > 11) {
 			for(i=startBlockIndex+1; i<=11; i++) { // ** replace the whole block
 				memset(buffer, 0, BLOCK_SIZE);
-				memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE); // !!!!! cast buf to void*?
+				memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
 				if (myINode.data_ptrs[i] != -1)
 					printf("data_ptr should be -1. Investigate.\n");
 				myINode.data_ptrs[i] = get_index();
@@ -326,14 +367,47 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				force_set_index(myINode.data_ptrs[i]);
 			}
 
-			// TODO !!!!
-			// deal with indrect pointers
-
+			// indirect pointers. Initialize indirect block
+			myINode.indirectPointer = get_index();
+			force_set_index(myINode.indirectPointer);
+			
+			int nbExtraBlocks = endBlockIndex - 11;
+			int addresses[NUM_ADDRESSES_INDIRECT];
+			for (i=0; i<NUM_ADDRESSES_INDIRECT; i++) {
+				if (nbExtraBlocks > 0) {
+					nbExtraBlocks--;
+					addresses[i] = get_index();
+					force_set_index(addresses[i]);
+					if (nbExtraBlocks == 0) { // last block to write
+						memset(buffer, 0, BLOCK_SIZE);
+						memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
+						if (length - bytesWritten != endIndexInBlock)
+							printf("Investigate endIndexInBlock in indirect pointers\n");
+						write_blocks(addresses[i], 1, buffer);
+						bytesWritten += BLOCK_SIZE;
+					} else {
+						memset(buffer, 0, BLOCK_SIZE);
+						memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
+						if (myINode.data_ptrs[i] != -1)
+							printf("data_ptr should be -1. Investigate.\n");
+						myINode.data_ptrs[i] = get_index();
+						write_blocks(myINode.data_ptrs[i], 1, buffer);
+						bytesWritten += BLOCK_SIZE;
+					}
+				} else {
+					addresses[i] = -1;
+				}
+			}
+			memset(buffer, 0, BLOCK_SIZE);
+			memcpy(buffer, addresses, BLOCK_SIZE);
+			write_blocks(myINode.indirectPointer, 1, buffer);
 		} else {
 			for(i=startBlockIndex+1; i<=endBlockIndex; i++) { // ** replace beginning of last block - partly read buf
 				if (i == endBlockIndex) {
 					memset(buffer, 0, BLOCK_SIZE);
-					memcpy(buffer, &buf[bytesWritten], length - bytesWritten); // !!!!! cast buf to void*? // 
+					memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
+					if (length - bytesWritten != endIndexInBlock)
+						printf("Investigate endIndexInBlock in direct pointers\n");
 					if (myINode.data_ptrs[i] != -1)
 						printf("data_ptr should be -1. Investigate.\n");
 					myINode.data_ptrs[i] = get_index();
@@ -342,7 +416,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 					force_set_index(myINode.data_ptrs[i]);
 				} else {
 					memset(buffer, 0, BLOCK_SIZE);
-					memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE); // !!!!! cast buf to void*?
+					memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
 					if (myINode.data_ptrs[i] != -1)
 						printf("data_ptr should be -1. Investigate.\n");
 					myINode.data_ptrs[i] = get_index();
@@ -356,7 +430,8 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		
 	}
 
-	myFd.rwptr = rwptr + bytesWritten;
+	myFd.rwptr += bytesWritten;
+	myINode.size += bytesWritten;
 	free(buffer);
 	writeINodeTable();
 	writeFreeBitMap();
