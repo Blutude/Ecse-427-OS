@@ -12,7 +12,7 @@
 #define BITMAP_ROW_SIZE (NUM_BLOCKS/8) // this essentially mimcs the number of rows we have in the bitmap. we will have 128 rows. 
 #define BLOCK_SIZE 1024
 #define INODE_LEN 100
-#define NUM_FILES (INODE_LEN-1)  // INODE_LEN - 1 because first INODE belongs to root directory
+#define NUM_FILES (INODE_LEN-1)  // INODE_LEN - 1 because first INode belongs to root directory
 #define NUM_BLOCKS_INODETABLE ((INODE_LEN)*(sizeof(inode_t))/BLOCK_SIZE + (((INODE_LEN)*(sizeof(inode_t)))%BLOCK_SIZE > 0)) // getting ceiling value = 8
 #define NUM_BLOCKS_ROOTDIR ((NUM_FILES)*(sizeof(directory_entry))/BLOCK_SIZE + (((NUM_FILES)*(sizeof(directory_entry)))%BLOCK_SIZE > 0)) // getting ceiling value = 3
 #define DATABLOCKS_START_ADDRESS (1+NUM_BLOCKS_INODETABLE) // = 9
@@ -88,6 +88,10 @@ int assertDefinedValues() {
 		return -1;
 	else
 		return 0;
+}
+
+int calulateByteIndex(int blockIndex, int indexInBlock) {
+	return BLOCK_SIZE*blockIndex+indexInBlock;
 }
 
 
@@ -329,9 +333,81 @@ int sfs_fread(int fileID, char *buf, int length) {
 	int endBlockIndex = endRwptr / BLOCK_SIZE;
 	int endIndexInBlock = endRwptr % BLOCK_SIZE; // exclusive
 
-	int bytesWritten = 0;
+	int bytesRead = 0;
 
 	buffer = (void*) malloc(BLOCK_SIZE);
+	int addresses[NUM_ADDRESSES_INDIRECT]; // pointers inside indirect block
+	int indirectBlockIndex;
+
+	for (i=startBlockIndex; i<= endBlockIndex; i++) {
+		if (calulateByteIndex(i,0) >= myFd.size) {
+			printf("File cannot be read past its size\n");
+			break;
+		}
+		memset(buffer, 0, BLOCK_SIZE);
+		if (i > 11) {
+			// indirect pointers
+
+			if (i = 12) {
+				// reading indirect block, initializing addresses
+				read_blocks(myINode.indirectPointer, 1, buffer);
+				int addresses[NUM_ADDRESSES_INDIRECT];
+				for (i=0; i<NUM_ADDRESSES_INDIRECT; i++)  {
+					memcpy(addresses[i], (int*)buffer+i, sizeof(int));
+				}
+				memset(buffer, 0, BLOCK_SIZE);
+			}
+			
+			// write data to buf
+			indirectBlockIndex = i-11-1;
+			if (addresses[indirectBlockIndex] == 0) {
+					printf("Address of block has not been found. Investigate\n"); // bytesIndex < myFd.size so it should be found
+					return bytesRead;
+			}
+			read_blocks(addresses[indirectBlockIndex], 1, buffer);
+			if (i == startBlockIndex) {
+				// read from startIndexInBlock to end of block and write (BLOCK_SIZE-startIndexInBlock) bytes to buf
+				memcpy(buf, buffer+startIndexInBlock, BLOCK_SIZE-startIndexInBlock);
+				bytesRead += BLOCK_SIZE-startIndexInBlock;
+			} else if (i == endBlockIndex) {
+				// read until endIndexInBlock and write endIndexInBlock bytes to buf + bytesRead
+				memcpy(buf+bytesRead, buffer, endIndexInBlock);
+				bytesRead += endIndexInBlock;
+				if (length - bytesWritten != endIndexInBlock)
+					printf("Investigate endIndexInBlock in indirect pointers\n");
+			} else {
+				// read entire block and write BLOCK_SIZE bytes to buf + bytesRead
+				memcpy(buf+bytesRead, buffer, BLOCK_SIZE);
+				bytesRead += BLOCK_SIZE;
+			}
+		} else {
+			// direct pointers
+
+			// write data to buf
+			if (myINode.data_ptr[i] == -1) {
+					printf("Address of block has not been found. Investigate\n"); // bytesIndex < myFd.size so it should be found
+					return bytesRead;
+			}
+			read_blocks(myINode.data_ptrs[i], 1, buffer);
+			if (i == startBlockIndex) {
+				// read from startIndexInBlock to end of block and write (BLOCK_SIZE-startIndexInBlock) bytes to buf
+				memcpy(buf, buffer+startIndexInBlock, BLOCK_SIZE-startIndexInBlock);
+				bytesRead += BLOCK_SIZE-startIndexInBlock;
+			} else if (i == endBlockIndex) {
+				// read until endIndexInBlock and write endIndexInBlock bytes to buf + bytesRead
+				memcpy(buf+bytesRead, buffer, endIndexInBlock);
+				bytesRead += BLOCK_SIZE-startIndexInBlock;
+			} else {
+				// read entire block and write BLOCK_SIZE bytes to buf + bytesRead
+				memcpy(buf+bytesRead, buffer, BLOCK_SIZE-startIndexInBlock);
+				bytesRead += BLOCK_SIZE;
+			}
+		}
+	}
+
+	myFd.rwptr += bytesRead;
+	free(buffer);
+	return bytesRead;
 }
 int sfs_fwrite(int fileID, const char *buf, int length) {
 	if (length < 0) {
@@ -378,13 +454,13 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 			int indirectBlockIndex = i-11-1;
 			if (i == startBlockIndex) {
 				// read first block, fill up block and write back to disk
-				if (addresses[indirectBlockIndex] == -1) {
+				if (addresses[indirectBlockIndex] == 0) {
 					addresses[indirectBlockIndex] = get_index();
 					if (startIndexInBlock != 0)
 						printf("(indirect pointer) startIndexInBlock should be 0. Investigate.\n");
 				}
 				read_blocks(addresses[indirectBlockIndex], 1, buffer);
-				memcpy((char*)buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock); // casting to char because in some c compilers, void pointer arithmetic is not allowed. Also sizeof(char) == 1 bytes
+				memcpy(buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock);
 				write_blocks(addresses[indirectBlockIndex], 1, buffer);
 				bytesWritten += BLOCK_SIZE-startIndexInBlock;
 			} else if (i == endBlockIndex) {
@@ -393,7 +469,9 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
 				if (length - bytesWritten != endIndexInBlock)
 					printf("Investigate endIndexInBlock in indirect pointers\n");
-				addresses[indirectBlockIndex] = get_index();
+				if (addresses[indirectBlockIndex] == 0) {
+					addresses[indirectBlockIndex] = get_index();
+				}
 				write_blocks(addresses[indirectBlockIndex], 1, buffer);
 				bytesWritten += length - bytesWritten;
 			} else {
@@ -421,7 +499,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				printf("(direct pointers) startIndexInBlock should be 0. Investigate.\n");
 		}
 		read_blocks(myINode.data_ptrs[startBlockIndex], 1, buffer);
-		memcpy((char*)buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock); // casting to char because in some c compilers, void pointer arithmetic is not allowed. Also sizeof(char) == 1 bytes
+		memcpy(buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock);
 		write_blocks(myINode.data_ptrs[startBlockIndex], 1, buffer);
 		bytesWritten += BLOCK_SIZE-startIndexInBlock;
 		force_set_index(myINode.data_ptrs[startBlockIndex]); // in case block was originally empty
@@ -483,12 +561,12 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 					// fill up beginning of block, write to disk
 					memset(buffer, 0, BLOCK_SIZE);
 					read_blocks(myINode.data_ptrs[i], 1, buffer);
-					memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
+					memcpy(buffer, &buf[bytesWritten], endIndexInBlock);
 					if (length - bytesWritten != endIndexInBlock)
 						printf("Investigate endIndexInBlock in direct pointers\n");
 					myINode.data_ptrs[i] = get_index();
 					write_blocks(myINode.data_ptrs[i], 1, buffer);
-					bytesWritten += length - bytesWritten;
+					bytesWritten += endIndexInBlock;
 					force_set_index(myINode.data_ptrs[i]);
 				} else {
 					// fill up entire block, write to disk
