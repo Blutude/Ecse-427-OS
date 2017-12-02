@@ -334,11 +334,65 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 
 	int bytesWritten = 0;
 
+	buffer = (void*) malloc(BLOCK_SIZE);
+
 	if (startBlockIndex > 11) {
-		// TODO !!!!
+		// indirect pointers
+
+		// ** replace end of first block
+		// read entire startBlock
+
+		memset(buffer, 0, BLOCK_SIZE);
+		// read indirect block
+		read_blocks(myINode.indirectPointer, 1, buffer);
+		int addresses[NUM_ADDRESSES_INDIRECT];
+		for (i=0; i<NUM_ADDRESSES_INDIRECT; i++)  {
+			memcpy(addresses[i], (int*)buffer+i, sizeof(int));
+		}
+
+		// write data
+		for (i=startBlockIndex; i<=endBlockIndex; i++) {
+			memset(buffer, 0, BLOCK_SIZE);
+			int indirectBlockIndex = i-11-1;
+			if (i == startBlockIndex) {
+				// read first block, fill up block and write back to disk
+				if (addresses[indirectBlockIndex] == -1) {
+					addresses[indirectBlockIndex] = get_index();
+					if (startIndexInBlock != 0)
+						printf("(indirect pointer) startIndexInBlock should be 0. Investigate.\n");
+				}
+				read_blocks(addresses[indirectBlockIndex], 1, buffer);
+				memcpy((char*)buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock); // casting to char because in some c compilers, void pointer arithmetic is not allowed. Also sizeof(char) == 1 bytes
+				write_blocks(addresses[indirectBlockIndex], 1, buffer);
+				bytesWritten += BLOCK_SIZE-startIndexInBlock;
+			} else if (i == endBlockIndex) {
+				// fill up beginning of block, write to disk
+				memcpy(buffer, &buf[bytesWritten], length - bytesWritten);
+				if (length - bytesWritten != endIndexInBlock)
+					printf("Investigate endIndexInBlock in indirect pointers\n");
+				if (addresses[indirectBlockIndex] != -1)
+					printf("Index should be -1. Investigate.\n");
+				addresses[indirectBlockIndex] = get_index();
+				write_blocks(addresses[indirectBlockIndex], 1, buffer);
+				bytesWritten += length - bytesWritten;
+			} else {
+				// fill up entire block, write to disk
+				memcpy(buffer, &buf[bytesWritten], BLOCK_SIZE);
+				if (addresses[indirectBlockIndex] != -1)
+					printf("Index should be -1. Investigate.\n");
+				addresses[indirectBlockIndex] = get_index();
+				write_blocks(addresses[indirectBlockIndex], 1, buffer);
+				bytesWritten += BLOCK_SIZE;
+			}
+			force_set_index(addresses[indirectBlockIndex]);
+		}
+
+		// write indirectblock back to disk
+		memset(buffer, 0, BLOCK_SIZE);
+		memcpy(buffer, addresses, BLOCK_SIZE);
+		write_blocks(myINode.indirectPointer, 1, buffer);
 	} else {
-		// write to first block
-		buffer = (void*) malloc(BLOCK_SIZE);
+		// direct pointers
 
 		// ** replace end of first block
 		// read entire startBlock
@@ -346,7 +400,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		if (myINode.data_ptrs[startBlockIndex] == -1) { // startIndexInBlock should be 0
 			myINode.data_ptrs[startBlockIndex] = get_index();
 			if (startIndexInBlock != 0)
-				printf("startIndexInBlock should be 0. Investigate.\n");
+				printf("(direct pointers) startIndexInBlock should be 0. Investigate.\n");
 		}
 		read_blocks(myINode.data_ptrs[startBlockIndex], 1, buffer);
 		memcpy((char*)buffer+startIndexInBlock, buf, BLOCK_SIZE-startIndexInBlock); // casting to char because in some c compilers, void pointer arithmetic is not allowed. Also sizeof(char) == 1 bytes
@@ -412,7 +466,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 						printf("data_ptr should be -1. Investigate.\n");
 					myINode.data_ptrs[i] = get_index();
 					write_blocks(myINode.data_ptrs[i], 1, buffer);
-					bytesWritten += BLOCK_SIZE;
+					bytesWritten += length - bytesWritten;
 					force_set_index(myINode.data_ptrs[i]);
 				} else {
 					memset(buffer, 0, BLOCK_SIZE);
