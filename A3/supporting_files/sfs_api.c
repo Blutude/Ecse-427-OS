@@ -26,7 +26,7 @@
     _data = _data & ~(1 << _which_bit)
 
 struct superblock_t superblock;
-struct file_descriptor fd[NUM_FILES]; 
+struct file_descriptor fd[INODE_LEN]; 
 struct directory_entry files[NUM_FILES];
 struct inode_t iNodeTable[INODE_LEN];
 void* buffer;
@@ -243,7 +243,16 @@ int sfs_getnextfilename(char *fname) {
 }
 
 int sfs_getfilesize(const char* path) {
+	if (nameValid(path) < 0)
+		return -1;
 
+	// find file by name - iterate through root directory
+	for (i=0; i<NUM_FILES; i++) {
+		if (files[i].num != -1 && !strcmp(files[i].name, path))
+			return iNodeTable[files[i].num].size;
+	}
+	printf("File %s not found\n", path);
+	return -1;
 }
 
 int sfs_fopen(char *name) { // make sure can't open same file twice
@@ -263,7 +272,7 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 
 	if (exists) {
 		// check if file already open - iterate fd table
-		for (i=1; i<NUM_FILES; i++) { // 0 is for root directory
+		for (i=1; i<INODE_LEN; i++) { // 0 is for root directory
 			if (fd[i].inodeIndex == iNodeIndex) {
 				return i; // file already open
 			}
@@ -306,19 +315,19 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 
 	// file is not open yet - find fd slot - iterate fd table
 	int fdIndex = -1;
-	for (i=1; i<NUM_FILES; i++) { // 0 is for root directory
+	for (i=1; i<INODE_LEN; i++) { // 0 is for root directory
 		if (fd[i].inodeIndex == -1) { // found free file descriptor slot
 			fdIndex = i;
 			break;
 		}
 	}
-	if (i == NUM_FILES) { // found no available slot
-		printf("Open file descriptor table full\n"); // should not happen because no more than 99 files anyway
+	if (i == INODE_LEN) { // found no available slot
+		printf("Open file descriptor table full. Investigate\n"); // should not happen because root directory not full and no more than 99 files anyway
 		return -1;
 	}
 
 	int rwptr = iNodeTable[iNodeIndex].size;
-	fd[fdIndex] = (file_descriptor) {iNodeIndex, &iNodeTable[iNodeIndex], rwptr}; // ?
+	fd[fdIndex] = (file_descriptor) {iNodeIndex, &iNodeTable[iNodeIndex], rwptr};
 
 	return fdIndex;
 }
@@ -329,7 +338,7 @@ int sfs_fclose(int fileID) {
 		return -1;
 	}
 
-	// check if file already closed - iterate fd table
+	// check if file already closed
 	if (fd[fileID].inodeIndex == -1) {
 		printf("File is already closed\n");
 	}
@@ -369,7 +378,7 @@ int sfs_fread(int fileID, char *buf, int length) {
 	int indirectBlockIndex;
 
 	for (i=startBlockIndex; i<= endBlockIndex; i++) {
-		if (calulateByteIndex(i,0) >= myFd.size) {
+		if (calulateByteIndex(i,0) >= myINode.size) {
 			printf("File cannot be read past its size\n");
 			break;
 		}
@@ -377,7 +386,7 @@ int sfs_fread(int fileID, char *buf, int length) {
 		if (i > 11) {
 			// indirect pointers
 
-			if (i = 12) {
+			if (i == 12) {
 				// reading indirect block, initializing addresses
 				read_blocks(myINode.indirectPointer, 1, buffer);
 				/*for (i=0; i<NUM_ADDRESSES_INDIRECT; i++)  {
@@ -406,11 +415,11 @@ int sfs_fread(int fileID, char *buf, int length) {
 				}
 			} else if (i == endBlockIndex) {
 				// read until endIndexInBlock (or size) and write endIndexInBlock bytes to buf + bytesRead
-				if (calculateByteIndex(i, endIndexInBlock) > myFd.size) {
+				if (calculateByteIndex(i, endIndexInBlock) > myINode.size) {
 					// read until size
-					memcpy(buf+bytesRead, buffer, myFd.size-calculateByteIndex(i,0));
-					bytesRead += myFd.size-calculateByteIndex(i,0);
-					if (length - bytesRead != myFd.size-calculateByteIndex(i,0))
+					memcpy(buf+bytesRead, buffer, myINode.size-calculateByteIndex(i,0));
+					bytesRead += myINode.size-calculateByteIndex(i,0);
+					if (length - bytesRead != myINode.size-calculateByteIndex(i,0))
 						printf("Investigate endIndexInBlock in indirect pointers\n");
 					printf("File cannot be read past its size\n");
 				} else {
@@ -446,11 +455,11 @@ int sfs_fread(int fileID, char *buf, int length) {
 				}
 			} else if (i == endBlockIndex) {
 				// read until endIndexInBlock (or size) and write endIndexInBlock bytes to buf + bytesRead
-				if (calculateByteIndex(i, endIndexInBlock) > myFd.size) {
+				if (calculateByteIndex(i, endIndexInBlock) > myINode.size) {
 					// read until size
-					memcpy(buf+bytesRead, buffer, myFd.size-calculateByteIndex(i,0));
-					bytesRead += myFd.size-calculateByteIndex(i,0);
-					if (length - bytesRead != myFd.size-calculateByteIndex(i,0))
+					memcpy(buf+bytesRead, buffer, myINode.size-calculateByteIndex(i,0));
+					bytesRead += myINode.size-calculateByteIndex(i,0);
+					if (length - bytesRead != myINode.size-calculateByteIndex(i,0))
 						printf("Investigate endIndexInBlock in direct pointers\n");
 					printf("File cannot be read past its size\n");
 				} else {
@@ -509,7 +518,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		if (i > 11) {
 			// indirect pointers
 
-			if (i = 12) {
+			if (i == 12) {
 				// reading indirect block, initializing addresses
 				if (myINode.indirectPointer == -1) {
 					myINode.indirectPointer = get_index();
@@ -548,7 +557,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				// write endIndexInBlock bytes from buf+bytesWritten to beginning of buffer
 				memcpy(buffer, buf+bytesWritten, endIndexInBlock);
 				bytesWritten += endIndexInBlock;
-				if (length - bytesRead != endIndexInBlock)
+				if (length - bytesWritten != endIndexInBlock)
 					printf("Investigate endIndexInBlock in indirect pointers\n");
 			} else {
 				// write BLOCK_SIZE bytes from buf+bytesWritten to buffer
@@ -586,7 +595,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 			} else {
 				// write BLOCK_SIZE bytes from buf+bytesWritten to buffer
 				memcpy(buffer, buf+bytesWritten, BLOCK_SIZE);
-				bytesRead += BLOCK_SIZE;
+				bytesWritten += BLOCK_SIZE;
 			}
 			write_blocks(myINode.data_ptrs[i], 1, buffer);
 			force_set_index(myINode.data_ptrs[i]);
@@ -601,8 +610,8 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	}
 	
 	myFd.rwptr += bytesWritten;
-	if (myFd.size < myFd.rwptr) {
-		myFd.size = myFd.rwptr; // update size
+	if (myINode.size < myFd.rwptr) {
+		myINode.size = myFd.rwptr; // update size
 	}
 	free(buffer);
 	if (writeINodeTable() < 0)
@@ -619,7 +628,7 @@ int sfs_fseek(int fileID, int loc) {
 		return -1;
 	}
 
-	// make sure file already open - iterate fd table
+	// make sure file already open
 	if (fd[fileID].inodeIndex == -1) {
 		printf("File is not open\n");
 		return -1;
@@ -654,7 +663,7 @@ int sfs_remove(char *file) {
 	}
 
 	// Remove file from fd table
-	for (i=0; i<NUM_FILES; i++) {
+	for (i=1; i<INODE_LEN; i++) {
 		if (fd[i].inodeIndex == iNodeIndex) {
 			fd[i] = (file_descriptor) {-1, NULL, 0};
 		}
@@ -698,13 +707,13 @@ int sfs_remove(char *file) {
 			}
 
 			indirectBlockIndex = i-11-1;
-			write_blocks(addresses[indirectBlockIndex], buffer, BLOCK_SIZE);
+			write_blocks(addresses[indirectBlockIndex], 1, buffer);
 			rm_index(addresses[indirectBlockIndex]);
 			addresses[indirectBlockIndex] = -1;
 			indirectBlockAddressModified = 1;
 		} else {
 			// direct pointers
-			write_blocks(myINode.data_ptrs[i], buffer, BLOCK_SIZE);
+			write_blocks(myINode.data_ptrs[i], 1, buffer);
 			rm_index(myINode.data_ptrs[i]);
 			myINode.data_ptrs[i] = -1;
 		}
@@ -714,7 +723,7 @@ int sfs_remove(char *file) {
 	if (indirectBlockAddressModified) {
 		// ** testing DELETE what's between stars
 		for (i=0; i<NUM_ADDRESSES_INDIRECT; i++) {
-			if (addresses[i]) != -1) {
+			if (addresses[i] != -1) {
 				printf("Issue with addresses. Investigate\n");
 				return -1;
 			}
