@@ -31,6 +31,8 @@ struct directory_entry files[NUM_FILES];
 struct inode_t iNodeTable[INODE_LEN];
 void* buffer;
 int i; // iterate forloops
+int filesVisited = 0; // for sfs_get_next_file_name
+int totalFiles = 0; // for sfs_get_next_file_name
 
 
 // ********************************** HELPER FUNCTIONS ******************************************
@@ -208,7 +210,7 @@ void mksfs(int fresh) {
 
 		// init file descriptors. Is not written in disk, is in-memory
 		fd[0] = (file_descriptor) {0, &iNodeTable[0], 0};
-		for (i=1; i<NUM_FILES; i++) {
+		for (i=1; i<INODE_LEN; i++) {
 			fd[i] = (file_descriptor) {-1, NULL, 0};
 		}
 	}
@@ -220,7 +222,24 @@ void mksfs(int fresh) {
 }
 
 int sfs_getnextfilename(char *fname) {
+	if (totalFiles == filesVisited) { // get back to beginning of the list
+		filesVisited = 0;
+		return 0;
+	}
 
+	// iterate through open files in file descriptors
+	int fileIndex = 0;
+	for (i=1; i<INODE_LEN; i++){
+		if (fd[i].inodeIndex != -1) {
+			if (fileIndex == filesVisited) {
+				memcpy(fname, files[i-1].name, sizeof(files[i-1].name));
+				break;
+			}
+			fileIndex++;
+		}
+	}
+	filesVisited++;
+	return 1;
 }
 
 int sfs_getfilesize(const char* path) {
