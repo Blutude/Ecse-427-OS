@@ -305,7 +305,18 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 }
 
 int sfs_fclose(int fileID) {
-	
+	if (fileID <= 0 || fileID > NUM_FILES) { // fileID 0 is reserved for root
+		printf("fileID %d is invalid\n", fileID);
+		return -1;
+	}
+
+	// check if file already closed - iterate fd table
+	if (fd[fileID].inodeIndex == -1) {
+		printf("File is already closed\n");
+	}
+
+	fd[fileID] = (file_descriptor) {-1, NULL, 0};
+	return 0;
 }
 
 int sfs_fread(int fileID, char *buf, int length) {
@@ -585,7 +596,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 
 int sfs_fseek(int fileID, int loc) {
 	if (fileID <= 0 || fileID > NUM_FILES) { // fileID 0 is reserved for root
-		printf("fileID %d is invalid. Investigate\n", fileID);
+		printf("fileID %d is invalid\n", fileID);
 		return -1;
 	}
 
