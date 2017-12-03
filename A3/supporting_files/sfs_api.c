@@ -127,7 +127,7 @@ void mksfs(int fresh) {
 
 
 		// init root inode and inode table.
-		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {DATABLOCKS_START_ADDRESS, DATABLOCKS_START_ADDRESS+1, DATABLOCKS_START_ADDRESS+2, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // root INode points to first 3 blocks of data blocks
+		iNodeTable[0] = (inode_t) {777, 0, 0, 0, 0, {DATABLOCKS_START_ADDRESS, DATABLOCKS_START_ADDRESS+1, DATABLOCKS_START_ADDRESS+2, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1}; // root INode points to first 3 blocks of data blocks (root directory)
 		for (i=1; i<INODE_LEN; i++)
 			iNodeTable[i] = (inode_t) {777, 0, 0, 0, 0, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}, -1};
 		if (writeINodeTable() < 0)
@@ -153,7 +153,7 @@ void mksfs(int fresh) {
 
 		// init file descriptors. Does not write to disk, is in-memory
 		fd[0] = (file_descriptor) {0, &iNodeTable[0], 0};
-		for (i=1; i<NUM_FILES; i++) {
+		for (i=1; i<INODE_LEN; i++) {
 			fd[i] = (file_descriptor) {-1, NULL, 0};
 		}
 
@@ -305,7 +305,7 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 }
 
 int sfs_fclose(int fileID) {
-
+	
 }
 
 int sfs_fread(int fileID, char *buf, int length) {
@@ -322,7 +322,7 @@ int sfs_fread(int fileID, char *buf, int length) {
 		return -1;
 	}
 
-	inode_t myINode = iNodeTable[fileID];
+	inode_t myINode = iNodeTable[myFd.inodeIndex];
 
 	// calculate nb of blocks needed and index inside last block
 	int rwptr = myFd.rwptr;
@@ -457,7 +457,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		return -1;
 	}
 
-	inode_t myINode = iNodeTable[fileID];
+	inode_t myINode = iNodeTable[myFd.inodeIndex];
 
 	// calculate nb of blocks needed and index inside last block
 	int rwptr = myFd.rwptr;
@@ -584,7 +584,24 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 }
 
 int sfs_fseek(int fileID, int loc) {
+	if (fileID <= 0 || fileID > NUM_FILES) { // fileID 0 is reserved for root
+		printf("fileID %d is invalid. Investigate\n", fileID);
+		return -1;
+	}
 
+	// make sure file already open - iterate fd table
+	if (fd[fileID].inodeIndex == -1) {
+		printf("File is not open\n");
+		return -1;
+	}
+
+	if (loc < 0 || loc > iNodeTable[fd[fileID].inodeIndex].size) {
+		printf("Attempting to set rwptr to part of file which is non existant");
+		return -1;
+	}
+
+	fd[fileID].rwptr = loc;
+	return 0;
 }
 
 int sfs_remove(char *file) {
