@@ -18,8 +18,7 @@ EXECUTABLE= ID_AZRAK_RONY
 all: $(SOURCES) $(HEADERS) $(EXECUTABLE)
 
 $(EXECUTABLE): $(OBJECTS)
-	gcc $(OBJECTS) $(LDFLAGS) -o $@
-
+	gcc $(OBJECTS) $(LDFLAGS)-o $@
 .c.o:
 	gcc $(CFLAGS) $< -o $@
 

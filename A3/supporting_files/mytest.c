@@ -39,7 +39,8 @@ char *rand_name()
 
   for (i = 0; i < MAX_FNAME_LENGTH; i++) {
     if (i != 16) {
-      fname[i] = 'A' + (rand() % 26);
+      fname[i] = 'A' + (rand() % 26);    fds[i] = sfs_fopen(names[i]);
+
     }
     else {
       fname[i] = '.';
