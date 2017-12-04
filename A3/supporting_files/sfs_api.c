@@ -70,7 +70,7 @@ int writeFreeBitMap() { // write to disk
 // **** Other helpers
 int nameValid(char* name) {
 	int length = strlen(name);
-	if (length > 20)
+	if (length > MAX_FILE_NAME)
 		return -1;
 	char copy[length];
 	memset(copy, '\0', sizeof(copy));
@@ -227,12 +227,12 @@ int sfs_getnextfilename(char *fname) {
 		return 0;
 	}
 
-	// iterate through open files in file descriptors
+	// iterate through all files in root
 	int fileIndex = 0;
-	for (i=1; i<INODE_LEN; i++){
-		if (fd[i].inodeIndex != -1) {
+	for (i=0; i<NUM_FILES; i++){
+		if (files[i].num != -1) {
 			if (fileIndex == filesVisited) {
-				memcpy(fname, files[i-1].name, sizeof(files[i-1].name));
+				memcpy(fname, files[i].name, sizeof(files[i].name));
 				break;
 			}
 			fileIndex++;
