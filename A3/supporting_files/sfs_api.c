@@ -636,12 +636,14 @@ int sfs_fseek(int fileID, int loc) {
 		return -1;
 	}
 
-	if (loc < 0 || loc > iNodeTable[fd[fileID].inodeIndex].size) {
-		printf("Attempting to set rwptr to part of file which is non existant");
-		return -1;
+	if (loc < 0) {
+		fd[fileID].rwptr = 0;
+	} else if (loc > iNodeTable[fd[fileID].inodeIndex].size) {
+		fd[fileID].rwptr = iNodeTable[fd[fileID].inodeIndex].size;
+	} else {
+		fd[fileID].rwptr = loc;
 	}
 
-	fd[fileID].rwptr = loc;
 	return 0;
 }
 
