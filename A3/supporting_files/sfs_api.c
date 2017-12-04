@@ -328,6 +328,7 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 
 	int rwptr = iNodeTable[iNodeIndex].size;
 	fd[fdIndex] = (file_descriptor) {iNodeIndex, &iNodeTable[iNodeIndex], rwptr};
+	totalFiles++;
 
 	return fdIndex;
 }
@@ -344,6 +345,7 @@ int sfs_fclose(int fileID) {
 	}
 
 	fd[fileID] = (file_descriptor) {-1, NULL, 0};
+	totalFiles--;
 	return 0;
 }
 
@@ -666,6 +668,7 @@ int sfs_remove(char *file) {
 	for (i=1; i<INODE_LEN; i++) {
 		if (fd[i].inodeIndex == iNodeIndex) {
 			fd[i] = (file_descriptor) {-1, NULL, 0};
+			totalFiles--;
 		}
 	}
 
