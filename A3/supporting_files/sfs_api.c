@@ -59,7 +59,7 @@ int writeFreeBitMap() { // write to disk
 
 
 // **** Other helpers
-int nameValid(char* name) {
+int nameValid(const char* name) {
 	int length = strlen(name);
 	if (length > MAX_FILE_NAME)
 		return -1;
