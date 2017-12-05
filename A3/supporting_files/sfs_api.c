@@ -4,12 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fuse.h>
+//#include <fuse.h>
 #include <strings.h>
 #include "disk_emu.h"
 #define AZRAK_RONY_DISK "sfs_disk.disk"
-#define NUM_BLOCKS 1024  //maximum number of data blocks on the disk.
-#define BITMAP_ROW_SIZE (NUM_BLOCKS/8) // this essentially mimcs the number of rows we have in the bitmap. we will have 128 rows. 
 #define BLOCK_SIZE 1024
 #define INODE_LEN 100
 #define NUM_FILES (INODE_LEN-1)  // INODE_LEN - 1 because first INode belongs to root directory
@@ -17,13 +15,6 @@
 #define NUM_BLOCKS_ROOTDIR ((NUM_FILES)*(sizeof(directory_entry))/BLOCK_SIZE + (((NUM_FILES)*(sizeof(directory_entry)))%BLOCK_SIZE > 0)) // getting ceiling value = 3
 #define DATABLOCKS_START_ADDRESS (1+NUM_BLOCKS_INODETABLE) // = 9
 #define NUM_ADDRESSES_INDIRECT (BLOCK_SIZE/sizeof(int))
-
-/* macros */
-#define FREE_BIT(_data, _which_bit) \
-    _data = _data | (1 << _which_bit)
-
-#define USE_BIT(_data, _which_bit) \
-    _data = _data & ~(1 << _which_bit)
 
 struct superblock_t superblock;
 struct file_descriptor fd[INODE_LEN]; 
@@ -92,7 +83,7 @@ int assertDefinedValues() {
 		return 0;
 }
 
-int calulateByteIndex(int blockIndex, int indexInBlock) {
+int calculateByteIndex(int blockIndex, int indexInBlock) {
 	return BLOCK_SIZE*blockIndex+indexInBlock;
 }
 
@@ -380,7 +371,7 @@ int sfs_fread(int fileID, char *buf, int length) {
 	int indirectBlockIndex;
 
 	for (i=startBlockIndex; i<= endBlockIndex; i++) {
-		if (calulateByteIndex(i,0) >= myINode.size) {
+		if (calculateByteIndex(i,0) >= myINode.size) {
 			printf("File cannot be read past its size\n");
 			break;
 		}
