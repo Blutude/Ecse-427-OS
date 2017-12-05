@@ -35,10 +35,9 @@ typedef struct file_descriptor {
     uint64_t rwptr;
 } file_descriptor;
 
-
 typedef struct directory_entry{
     int num; // represents the inode number of the entery. 
-    char name[MAX_FILE_NAME]; // represents the name of the entery. 
+    char name[MAX_FILE_NAME+1]; // represents the name of the entery. +1 so we can see last char '\0'
 }directory_entry;
 
 

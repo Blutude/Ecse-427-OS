@@ -144,7 +144,7 @@ main(int argc, char **argv)
 
   // Just to be cruel - attempt to read from a closed file handle. 
   
-  /*if (sfs_fread(fds[1], fixedbuf, sizeof(fixedbuf)) > 0) {
+  if (sfs_fread(fds[1], fixedbuf, sizeof(fixedbuf)) > 0) {
     fprintf(stderr, "ERROR: read from a closed file handle?\n");
     error_count++;
   }
@@ -216,7 +216,7 @@ main(int argc, char **argv)
 
   printf("Created %d files in the root directory\n", ncreate);
 
-  nopen = 0;
+  /*nopen = 0;
   for (i = 0; i < ncreate; i++) {
     fds[i] = sfs_fopen(names[i]);
     if (fds[i] < 0) {
@@ -245,6 +245,7 @@ main(int argc, char **argv)
     if (fds[i] < 0) {
       fprintf(stderr, "ERROR: can't re-open file %s\n", names[i]);
     }
+    
   }
 
   // Now test the file contents.
