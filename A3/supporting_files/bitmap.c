@@ -9,7 +9,7 @@
 
 /* globals */
 // the actual data. initialize all bits to high
-uint8_t free_bit_map[BITMAP_ROW_SIZE] = { [0 ... BITMAP_ROW_SIZE-1] = UINT8_MAX };
+uint8_t free_bit_map[SIZE] = { [0 ... SIZE-1] = UINT8_MAX };
 
 /* macros */
 #define FREE_BIT(_data, _which_bit) \
