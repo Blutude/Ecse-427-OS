@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #define MAX_FILE_NAME 20
+#define MAXFILENAME 20
 #define MAX_EXTENSION_NAME 3
 
 typedef struct superblock_t{

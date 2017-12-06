@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <fuse.h>
+#include <fuse.h>
 #include <strings.h>
 #include "disk_emu.h"
 #define AZRAK_RONY_DISK "sfs_disk.disk"
@@ -354,7 +354,6 @@ int sfs_fclose(int fileID) {
 
 	// check if file already closed
 	if (fd[fileID].inodeIndex == -1) {
-		printf("File is already closed\n");
 		return -1;
 	}
 
@@ -374,7 +373,6 @@ int sfs_fread(int fileID, char *buf, int length) {
 
 	// check that file is open
 	if ((*myFd).inodeIndex == -1) {
-		printf("File is not open\n");
 		return -1;
 	}
 
@@ -786,8 +784,13 @@ int sfs_remove(char *file) {
 		indirectBlockAddressModified = 0;
 	}
 
-	rm_index((*myINode).indirectPointer);
-	(*myINode).indirectPointer = -1;
+	if (addressesInitialized) { // indirectPointer has valid block address
+		rm_index((*myINode).indirectPointer);
+		(*myINode).indirectPointer = -1;
+	} else {
+		if ((*myINode).indirectPointer != -1)
+			printf("Indirect pointer should be -1 but is %d. Investigate!\n", (*myINode).indirectPointer);
+	}
 	(*myINode).size = -1;
 	free(buffer);
 	if (writeINodeTable() < 0)
