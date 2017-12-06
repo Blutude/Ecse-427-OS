@@ -216,7 +216,7 @@ main(int argc, char **argv)
 
   printf("Created %d files in the root directory\n", ncreate);
 
-  /*nopen = 0;
+  nopen = 0;
   for (i = 0; i < ncreate; i++) {
     fds[i] = sfs_fopen(names[i]);
     if (fds[i] < 0) {

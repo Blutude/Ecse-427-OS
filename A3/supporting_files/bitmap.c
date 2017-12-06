@@ -1,7 +1,7 @@
 // free bitmap for OS file systems assignment
 
 #include "bitmap.h"
-
+#include <stdio.h>
 #include <strings.h>    // for `ffs`
 
 /* constants */
@@ -21,7 +21,12 @@ uint8_t free_bit_map[SIZE] = { [0 ... SIZE-1] = UINT8_MAX };
 void force_set_index(uint32_t index) {
     // TODO
     // Used to force indicies to used 
-    // this is the opposite of rm_index. 
+    // this is the opposite of rm_index.
+
+    if (index < 0 || index > 1023) {
+        printf("Can't force set outside the available range\n");
+        return;
+    } 
 
     // get index in array of which bit to use
     uint32_t i = index / 8;
