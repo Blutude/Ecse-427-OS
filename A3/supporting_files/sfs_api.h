@@ -50,5 +50,6 @@ int sfs_fread(int fileID, char *buf, int length);
 int sfs_fwrite(int fileID, const char *buf, int length);
 int sfs_fseek(int fileID, int loc);
 int sfs_remove(char *file);
+void printInodeNbThreeTestHelper(); // DELETE
 
 #endif //_INCLUDE_SFS_API_H_

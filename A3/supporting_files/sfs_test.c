@@ -314,9 +314,9 @@ main(int argc, char **argv)
   printf("Trying to fill up the disk with repeated writes to %s.\n", names[0]);
   printf("(This may take a while).\n");
 
-  //* Now try opening the first file, and just write a huge bunch of junk.
-  // * This is just to try to fill up the disk, to see what happens.
-  // *
+  // Now try opening the first file, and just write a huge bunch of junk.
+  //  This is just to try to fill up the disk, to see what happens.
+  // 
   fds[0] = sfs_fopen(names[0]);
   if (fds[0] >= 0) {
     for (i = 0; i < 100000; i++) {
@@ -344,9 +344,11 @@ main(int argc, char **argv)
     fprintf(stderr, "ERROR: re-opening file %s\n", names[0]);
   }
 
-  //* Now, having filled up the disk, try one more time to read the
-   //* contents of the files we created.
-   //*
+  printInodeNbThreeTestHelper();
+
+  // Now, having filled up the disk, try one more time to read the
+   // contents of the files we created.
+   //
   for (i = 0; i < nopen; i++) {
     fds[i] = sfs_fopen(names[i]);
     sfs_fseek(fds[i], 0);
@@ -374,6 +376,6 @@ main(int argc, char **argv)
   }
 
   fprintf(stderr, "Test program exiting with %d errors\n", error_count);
-  return (error_count);*/
+  return (error_count);
 }
 

@@ -86,6 +86,28 @@ int calculateByteIndex(int blockIndex, int indexInBlock) {
 	return BLOCK_SIZE*blockIndex+indexInBlock;
 }
 
+void printInodeNbThreeTestHelper() {
+	int i;
+	printf("\n");
+	printf("Inode 3\n");
+	for (i=0; i<12; i++)
+		printf("Data ptrs %d: %d\n", i, iNodeTable[3].data_ptrs[i]);
+	printf("\n");
+	if (iNodeTable[3].indirectPointer != -1) {
+		printf("Indirect block: %d\n", iNodeTable[3].indirectPointer);
+		void *myBuf = (void*) malloc(BLOCK_SIZE);
+		memset(myBuf, 0, BLOCK_SIZE);
+		read_blocks(iNodeTable[3].indirectPointer, 1, myBuf);
+		int ind_ptrs[NUM_ADDRESSES_INDIRECT];
+		memcpy(ind_ptrs, myBuf, BLOCK_SIZE);
+		for (i=0; i<NUM_ADDRESSES_INDIRECT; i++)
+			printf("Indirect ptrs %d: %d\n", i, ind_ptrs[i]);
+		printf("\n");
+		memset(myBuf, 0, BLOCK_SIZE);
+		free(myBuf);
+	}
+}
+
 
 // *********************************************************************************
 // *********************************************************************************
@@ -355,7 +377,8 @@ int sfs_fread(int fileID, char *buf, int length) {
 		return -1;
 	}
 
-	inode_t *myINode = &iNodeTable[(*myFd).inodeIndex];
+	inode_t *myINode;
+	myINode = (*myFd).inode;
 	
 	// calculate nb of blocks needed and index inside last block
 	int rwptr = (*myFd).rwptr;
@@ -486,7 +509,8 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		return -1;
 	}
 
-	inode_t *myINode = &iNodeTable[(*myFd).inodeIndex];
+	inode_t *myINode;
+	myINode = (*myFd).inode;
 
 	// calculate nb of blocks needed and index inside last block
 	int rwptr = (*myFd).rwptr;
@@ -503,10 +527,13 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	int indirectBlockIndex;
 	int indirectBlockAddressModified = 0; // boolean
 
+	int fullError = 0;
+
 	int i;
 	for (i=startBlockIndex; i<= endBlockIndex; i++) {
 		if (get_index() > 1023) {
 			printf("No more available blocks in bit map\n");
+			fullError = 1;
 			break;
 		}
 		memset(buffer, 0, BLOCK_SIZE);
@@ -517,9 +544,11 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				// reading indirect block, initializing addresses
 				if ((*myINode).indirectPointer == -1) {
 					(*myINode).indirectPointer = get_index();
+					force_set_index((*myINode).indirectPointer);
 					int index;
 					for (index=0; index<NUM_ADDRESSES_INDIRECT; index++) 
 						addresses[index] = -1;
+					indirectBlockAddressModified = 1;
 				} else {
 					read_blocks((*myINode).indirectPointer, 1, buffer);
 					/*int j;
@@ -535,10 +564,12 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 			indirectBlockIndex = i-11-1;
 			if (indirectBlockIndex > 1023) {
 				printf("Max file size has been reached\n");
+				fullError = 1;
 				break;
 			}
 			if (addresses[indirectBlockIndex] == -1) {
 				addresses[indirectBlockIndex] = get_index();
+				force_set_index(addresses[indirectBlockIndex]);
 				indirectBlockAddressModified = 1;
 			}
 			read_blocks(addresses[indirectBlockIndex], 1, buffer);
@@ -564,13 +595,13 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				bytesWritten += BLOCK_SIZE;
 			}
 			write_blocks(addresses[indirectBlockIndex], 1, buffer);
-			force_set_index(addresses[indirectBlockIndex]);
 		} else {
 			// direct pointers
 
 			// write data to disk
 			if ((*myINode).data_ptrs[i] == -1) {
 				(*myINode).data_ptrs[i] = get_index();
+				force_set_index((*myINode).data_ptrs[i]);
 				if (i == startBlockIndex && startIndexInBlock != 0)
 					printf("(direct pointers) startIndexInBlock should be 0. Investigate.\n");
 			}
@@ -597,7 +628,6 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				bytesWritten += BLOCK_SIZE;
 			}
 			write_blocks((*myINode).data_ptrs[i], 1, buffer);
-			force_set_index((*myINode).data_ptrs[i]);
 		}
 	}
 
@@ -618,7 +648,10 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	if (writeFreeBitMap() < 0)
 		printf("Failure(s) writing free bit map to disk\n");
 
-	return bytesWritten;
+	if (fullError)
+		return -1;
+	else
+		return bytesWritten;
 }
 
 int sfs_fseek(int fileID, int loc) {
@@ -671,7 +704,8 @@ int sfs_remove(char *file) {
 		}
 	}
 
-	inode_t *myINode = &iNodeTable[iNodeIndex];
+	inode_t *myINode;
+	myINode = &iNodeTable[iNodeIndex];
 	int endBlockIndex = (*myINode).size / BLOCK_SIZE;
 	int addresses[NUM_ADDRESSES_INDIRECT]; // pointers inside indirect block
 	int indirectBlockIndex;
@@ -724,28 +758,11 @@ int sfs_remove(char *file) {
 
 	// write indirectblock back to disk
 	if (indirectBlockAddressModified) {
-		// ** testing DELETE what's between stars
-		for (i=0; i<NUM_ADDRESSES_INDIRECT; i++) {
-			if (addresses[i] != -1) {
-				printf("Issue with addresses. Investigate\n");
-				return -1;
-			}
-		}
-		// **
 		memset(buffer, 0, BLOCK_SIZE);
 		memcpy(buffer, addresses, BLOCK_SIZE);
 		write_blocks((*myINode).indirectPointer, 1, buffer);
 		indirectBlockAddressModified = 0;
 	}
-
-	// ** testing DELETE what's between stars
-	for (i=0; i<12; i++) {
-		if ((*myINode).data_ptrs[i] != -1) {
-			printf("Issue with data_ptrs. Investigate\n");
-			return -1;
-		}
-	}
-	// **
 
 	(*myINode).indirectPointer = -1;
 	(*myINode).size = -1;

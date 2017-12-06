@@ -56,7 +56,7 @@ uint32_t get_index() {
     uint8_t bit = ffs(free_bit_map[i]) - 1;
 
     // set the bit to used
-    USE_BIT(free_bit_map[i], bit);
+    //USE_BIT(free_bit_map[i], bit); // I always force_set_index after get_index(). Sometimes I check get_index() without wanting to force set.
 
     //return which block we used
     return i*8 + bit;
