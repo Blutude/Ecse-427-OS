@@ -369,7 +369,8 @@ int sfs_fread(int fileID, char *buf, int length) {
 		return -1;
 	}
 
-	file_descriptor *myFd = &fd[fileID];
+	file_descriptor *myFd;
+	myFd = &fd[fileID];
 
 	// check that file is open
 	if ((*myFd).inodeIndex == -1) {
@@ -501,7 +502,8 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 		return -1;
 	}
 
-	file_descriptor *myFd = &fd[fileID];
+	file_descriptor *myFd;
+	myFd = &fd[fileID];
 
 	// check that file is open
 	if ((*myFd).inodeIndex == -1) {
@@ -531,7 +533,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 
 	int i;
 	for (i=startBlockIndex; i<= endBlockIndex; i++) {
-		if (get_index() > 1023) {
+		if (get_index() > 1023 || get_index < 0) {
 			printf("No more available blocks in bit map\n");
 			fullError = 1;
 			break;
@@ -594,7 +596,13 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				memcpy(buffer, buf+bytesWritten, BLOCK_SIZE);
 				bytesWritten += BLOCK_SIZE;
 			}
-			write_blocks(addresses[indirectBlockIndex], 1, buffer);
+			if (addresses[indirectBlockIndex] < 0 || addresses[indirectBlockIndex] > 1023) {
+				printf("Why indirect pointer invalid value??\n");
+				fullError = 1;
+				break;
+			} else {
+				write_blocks(addresses[indirectBlockIndex], 1, buffer);
+			}
 		} else {
 			// direct pointers
 
@@ -627,7 +635,13 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 				memcpy(buffer, buf+bytesWritten, BLOCK_SIZE);
 				bytesWritten += BLOCK_SIZE;
 			}
-			write_blocks((*myINode).data_ptrs[i], 1, buffer);
+			if ((*myINode).data_ptrs[i] < 0 || (*myINode).data_ptrs[i] > 1023) {
+				printf("Why data pointer invalid value??\n");
+				fullError = 1;
+				break;
+			} else {
+				write_blocks((*myINode).data_ptrs[i], 1, buffer);
+			}
 		}
 	}
 
@@ -635,7 +649,12 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 	if (indirectBlockAddressModified) {
 		memset(buffer, 0, BLOCK_SIZE);
 		memcpy(buffer, addresses, BLOCK_SIZE);
-		write_blocks((*myINode).indirectPointer, 1, buffer);
+		if ((*myINode).indirectPointer < 0 || (*myINode).indirectPointer > 1023) {
+			printf("Why indirect block invalid value??\n");
+			fullError = 1;
+		} else {
+			write_blocks((*myINode).indirectPointer, 1, buffer);
+		}
 	}
 
 	(*myFd).rwptr += bytesWritten;
@@ -720,7 +739,7 @@ int sfs_remove(char *file) {
 			if (i == 12) {
 				if ((*myINode).indirectPointer == -1) {
 					if ((*myINode).size != 12*BLOCK_SIZE) {
-						printf("Issue with size. Investigate");
+						printf("Issue with size. Investigate\n");
 						return -1;
 					}
 					break;
@@ -735,15 +754,14 @@ int sfs_remove(char *file) {
 				memset(buffer, 0, BLOCK_SIZE);
 			}
 
+			indirectBlockIndex = i-11-1;
 			if (addresses[indirectBlockIndex] == -1) {
 				if ((*myINode).size != i*BLOCK_SIZE) {
-					printf("Issue with size. Investigate");
+					printf("Issue with size. Investigate\n");
 					return -1;
 				}
 				break;
 			}
-
-			indirectBlockIndex = i-11-1;
 			write_blocks(addresses[indirectBlockIndex], 1, buffer);
 			rm_index(addresses[indirectBlockIndex]);
 			addresses[indirectBlockIndex] = -1;
