@@ -318,7 +318,7 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 		// got fileIndex and iNodeIndex
 		strcpy(files[fileIndex].name, name);
 		files[fileIndex].num = iNodeIndex;
-		iNodeTable[iNodeIndex].size = 0; // value that determines inode is used
+		iNodeTable[iNodeIndex].size = 0; // value that determines inode is used (-1)
 		// write to disk
 		if (writeINodeTable() < 0)
 			printf("Failure(s) writing iNode to disk");
@@ -416,10 +416,6 @@ int sfs_fread(int fileID, char *buf, int length) {
 			if (!addressesInitialized) {
 				// reading indirect block, initializing addresses
 				read_blocks((*myINode).indirectPointer, 1, buffer);
-				/*int j;
-				for (j=0; j<NUM_ADDRESSES_INDIRECT; j++)  {
-					memcpy(addresses[j], (int*)buffer+j, sizeof(int));
-				}*/
 				memcpy(addresses, buffer, BLOCK_SIZE);
 				memset(buffer, 0, BLOCK_SIZE);
 				addressesInitialized = 1;
@@ -556,11 +552,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 					indirectBlockAddressModified = 1;
 				} else {
 					read_blocks((*myINode).indirectPointer, 1, buffer);
-					/*int j;
-					for (j=0; j<NUM_ADDRESSES_INDIRECT; j++)  {
-						memcpy(addresses[j], (int*)buffer+j, sizeof(int));
-					}*/
-					memcpy(addresses, buffer, BLOCK_SIZE); // if this wrong, modify writing part of addresses below
+					memcpy(addresses, buffer, BLOCK_SIZE);
 					memset(buffer, 0, BLOCK_SIZE);
 				}
 				addressesInitialized = 1;
@@ -568,7 +560,7 @@ int sfs_fwrite(int fileID, const char *buf, int length) {
 			
 			// write data to disk
 			indirectBlockIndex = i-11-1;
-			if (indirectBlockIndex > 1023) {
+			if (indirectBlockIndex >= NUM_ADDRESSES_INDIRECT) {
 				printf("Max file size has been reached\n");
 				fullError = 1;
 				break;
@@ -761,10 +753,6 @@ int sfs_remove(char *file) {
 				}
 				// initialize addresses
 				read_blocks((*myINode).indirectPointer, 1, buffer);
-				/*int j;
-				for (j=0; j<NUM_ADDRESSES_INDIRECT; j++)  {
-					memcpy(addresses[j], (int*)buffer+j, sizeof(int));
-				}*/
 				memcpy(addresses, buffer, BLOCK_SIZE);
 				memset(buffer, 0, BLOCK_SIZE);
 				addressesInitialized = 1;
@@ -798,6 +786,7 @@ int sfs_remove(char *file) {
 		indirectBlockAddressModified = 0;
 	}
 
+	rm_index((*myINode).indirectPointer);
 	(*myINode).indirectPointer = -1;
 	(*myINode).size = -1;
 	free(buffer);

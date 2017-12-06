@@ -255,10 +255,6 @@ main(int argc, char **argv)
   printf("Simultaneously opened %d files\n", nopen);
 
   for (i = 0; i < nopen; i++) {
-    if (i == 31) {
-      printf("Get here\n"); // delete
-      printf("fd value %d\n", fds[i]); // delete
-    }
     tmp = sfs_fwrite(fds[i], test_str, strlen(test_str));
     if (tmp != strlen(test_str)) {
       fprintf(stderr, "ERROR: Tried to write %d, returned %d\n", 
@@ -353,11 +349,6 @@ main(int argc, char **argv)
     for (i = 0; i < 100000; i++) {
       int x;
 
-      if (fds[i] == 1) {
-        printf("Get here\n"); // delete
-        printf("fd index %d\n", i); // delete
-      }
-
       if ((i % 100) == 0) {
         fprintf(stderr, "%d\r", i);
       }
@@ -396,10 +387,6 @@ main(int argc, char **argv)
    */
   for (i = 0; i < nopen; i++) {
     fds[i] = sfs_fopen(names[i]);
-    if (i == 31) {
-      printf("Get here\n"); // delete
-      printf("fd value %d\n", fds[i]); // delete
-    }
     sfs_fseek(fds[i], 0);
     if (fds[i] >= 0) {
       readsize = sfs_fread(fds[i], fixedbuf, sizeof(fixedbuf));
