@@ -377,7 +377,7 @@ main(int argc, char **argv)
   while (sfs_getnextfilename(filename)) {
 	  if (strcmp(filename, names[max]) != 0) {
 	  	printf("ERROR misnamed file %d: %s %s\n", max, filename, names[max]);
-		error_count++;
+		  error_count++;
 	  }
 	  max++;
   }

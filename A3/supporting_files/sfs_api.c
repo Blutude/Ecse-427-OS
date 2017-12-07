@@ -21,8 +21,7 @@ struct file_descriptor fd[INODE_LEN];
 struct directory_entry files[NUM_FILES];
 struct inode_t iNodeTable[INODE_LEN];
 void* buffer;
-int filesVisited = 0; // for sfs_get_next_file_name
-int totalFiles = 0; // for sfs_get_next_file_name
+int dirPtr = 0; // for sfs_getnextfilename
 
 
 // ********************************** HELPER FUNCTIONS ******************************************
@@ -231,24 +230,21 @@ void mksfs(int fresh) {
 }
 
 int sfs_getnextfilename(char *fname) {
-	if (totalFiles == filesVisited) { // get back to beginning of the list
-		filesVisited = 0;
+	if (dirPtr >= NUM_FILES) {
+		dirPtr = 0;
 		return 0;
 	}
 
-	// iterate through all files in root
-	int fileIndex = 0;
-	int i;
-	for (i=0; i<NUM_FILES; i++){
-		if (files[i].num < 0) {
-			if (fileIndex == filesVisited) {
-				memcpy(fname, files[i].name, sizeof(files[i].name));
-				break;
-			}
-			fileIndex++;
+	while(files[dirPtr].num == -1) { // increment dirPtr until next available file found
+		dirPtr++;
+		if (dirPtr >= NUM_FILES) {
+			dirPtr = 0;
+			return 0;
 		}
 	}
-	filesVisited++;
+
+	memcpy(fname, files[dirPtr].name, MAX_FILE_NAME);
+	dirPtr++;
 	return 1;
 }
 
@@ -341,7 +337,6 @@ int sfs_fopen(char *name) { // make sure can't open same file twice
 
 	int rwptr = iNodeTable[iNodeIndex].size;
 	fd[fdIndex] = (file_descriptor) {iNodeIndex, &iNodeTable[iNodeIndex], rwptr};
-	totalFiles++;
 
 	return fdIndex;
 }
@@ -358,7 +353,6 @@ int sfs_fclose(int fileID) {
 	}
 
 	fd[fileID] = (file_descriptor) {-1, NULL, 0};
-	totalFiles--;
 	return 0;
 }
 
@@ -704,12 +698,14 @@ int sfs_remove(char *file) {
 	if (nameValid(file) < 0)
 		return -1;
 
-	// find file by name - iterate root directory
+	// find file by name - iterate root directory and remove file
 	int i;
 	int iNodeIndex = -1;
 	for (i=0; i<NUM_FILES; i++) {
 		if (!strcmp(files[i].name, file)) {
 			iNodeIndex = files[i].num;
+			files[i].num = -1;
+			memset(files[i].name, '\0', sizeof(files[i].name));
 			break;
 		}
 	}
@@ -723,7 +719,6 @@ int sfs_remove(char *file) {
 	for (i=1; i<INODE_LEN; i++) {
 		if (fd[i].inodeIndex == iNodeIndex) {
 			fd[i] = (file_descriptor) {-1, NULL, 0};
-			totalFiles--;
 		}
 	}
 
@@ -799,7 +794,6 @@ int sfs_remove(char *file) {
 		printf("Failure(s) writing free bit map to disk\n");
 	if (writeRootDirectory() < 0)
 		printf("Failure(s) writing root directory to disk\n");
-
 	return 0;
 }
 
